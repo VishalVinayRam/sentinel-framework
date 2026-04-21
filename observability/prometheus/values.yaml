@@ -2,6 +2,27 @@ prometheus:
   prometheusSpec:
     scrapeInterval: 15s
     evaluationInterval: 15s
+
+    # Remote-write to an external Mimir (or any Prometheus-compatible store).
+    # Works regardless of where Mimir is hosted — GCP, on-prem, Grafana Cloud.
+    # Leave the list empty ([]) to disable.
+    remoteWrite:
+      - url: "${MIMIR_REMOTE_WRITE_URL}"           # e.g. https://mimir.company.com/api/v1/push
+        # Grafana Cloud / Mimir basic auth (omit block if Mimir is open)
+        basicAuth:
+          username: "${MIMIR_USERNAME}"
+          password: "${MIMIR_PASSWORD}"
+        # Only ship sentinel_* metrics to Mimir; keep infra noise local
+        writeRelabelConfigs:
+          - sourceLabels: [__name__]
+            regex: "sentinel_.*"
+            action: keep
+        # Backoff / queue tuning so Lambda-spiky writes don't drop
+        queueConfig:
+          capacity: 2500
+          maxSamplesPerSend: 500
+          batchSendDeadline: 5s
+
     additionalScrapeConfigs:
       - job_name: sentinel-lambdas
         static_configs:
