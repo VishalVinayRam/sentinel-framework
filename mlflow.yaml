@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: ml-ops-lite
+spec:
+  ports:
+  - port: 5000
+    targetPort: 5000
+  selector:
+    app: mlflow
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mlflow
+  namespace: ml-ops-lite
+spec:
+  serviceName: "mlflow"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+    spec:
+      containers:
+      - name: mlflow
+        image: ghcr.io/mlflow/mlflow:v2.11.3
+        command: ["mlflow", "server", "--host", "0.0.0.0", "--backend-store-uri", "sqlite:///mlflow.db", "--default-artifact-root", "/mlflow/artifacts"]
+        ports:
+        - containerPort: 5000
+        volumeMounts:
+        - name: mlflow-data
+          mountPath: /mlflow
+  volumeClaimTemplates:
+  - metadata:
+      name: mlflow-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi

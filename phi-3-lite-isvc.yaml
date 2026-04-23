@@ -1,0 +1,28 @@
+apiVersion: "serving.kserve.io/v1beta1"
+kind: "InferenceService"
+metadata:
+  name: "phi-3-lite"
+  namespace: ml-ops-lite
+spec:
+  predictor:
+    model:
+      modelFormat:
+        name: huggingface
+      # Pointing to the MLflow artifact path on the shared PVC
+      storageUri: "pvc://mlflow-data/artifacts/1/adapters"
+      runtime: kserve-huggingface-server
+      resources:
+        requests:
+          cpu: "1"
+          memory: "4Gi"
+        limits:
+          cpu: "2"
+          memory: "6Gi"
+      env:
+        - name: MODEL_ID
+          value: "microsoft/Phi-3-mini-4k-instruct"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-token
+              key: HF_TOKEN
