@@ -1,0 +1,42 @@
+name: Terraform Validate
+
+on:
+  push:
+    paths:
+      - 'infra/**'
+  pull_request:
+    paths:
+      - 'infra/**'
+
+jobs:
+  validate:
+    name: Terraform Format & Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+        working-directory: infra
+
+      - name: Terraform Init
+        run: terraform init -backend=false
+        working-directory: infra
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: infra
+        env:
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+          AWS_DEFAULT_REGION: us-east-1

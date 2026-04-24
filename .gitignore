@@ -1,0 +1,41 @@
+# Terraform
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/*.tfvars
+!infra/example.tfvars
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.env
+
+# Kubernetes secrets (never commit real secrets)
+*-secret.yaml
+*-secrets.yaml
+!step-a-secrets.yaml
+
+# ML artifacts
+ml-core/results/
+ml-core/adapters/
+*.ckpt
+*.bin
+*.safetensors
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
