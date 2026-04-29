@@ -21,3 +21,35 @@ variable "project" {
   type        = string
   default     = "sentinel"
 }
+
+variable "kserve_endpoint" {
+  description = "KServe inference endpoint URL (running in Minikube)"
+  type        = string
+  default     = "http://localhost:8080"
+}
+
+variable "rag_endpoint" {
+  description = "RAG service endpoint URL"
+  type        = string
+  default     = "http://localhost:8001"
+}
+
+variable "github_repo" {
+  description = "GitHub repo in owner/repo format"
+  type        = string
+  default     = "VishalVinayRam/Project-KEMM"
+}
+
+variable "github_token" {
+  description = "GitHub personal access token"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "github_webhook_secret" {
+  description = "Secret for validating GitHub webhook signatures"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
