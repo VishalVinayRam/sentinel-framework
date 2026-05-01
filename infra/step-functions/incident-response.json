@@ -1,0 +1,170 @@
+{
+  "Comment": "Sentinel incident response pipeline — fetch changes, query RAG, analyze root cause, generate runbook, publish report",
+  "StartAt": "FetchRecentChanges",
+  "States": {
+    "FetchRecentChanges": {
+      "Type": "Task",
+      "Resource": "${RootCauseAgentLambdaArn}",
+      "Parameters": {
+        "action": "fetch_recent_changes",
+        "incident_id.$": "$.incident_id",
+        "state": {}
+      },
+      "ResultPath": "$.state",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "HandleFetchError",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "QueryRAGKnowledgeBase"
+    },
+
+    "QueryRAGKnowledgeBase": {
+      "Type": "Task",
+      "Resource": "${RootCauseAgentLambdaArn}",
+      "Parameters": {
+        "action": "query_rag",
+        "incident_id.$": "$.incident_id",
+        "state.$": "$.state"
+      },
+      "ResultPath": "$.state",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2,
+          "BackoffRate": 1.5
+        }
+      ],
+      "Next": "AnalyzeRootCause"
+    },
+
+    "AnalyzeRootCause": {
+      "Type": "Task",
+      "Resource": "${RootCauseAgentLambdaArn}",
+      "Parameters": {
+        "action": "analyze_root_cause",
+        "incident_id.$": "$.incident_id",
+        "state.$": "$.state"
+      },
+      "ResultPath": "$.state",
+      "TimeoutSeconds": 300,
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 10,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "SeverityRouter"
+    },
+
+    "SeverityRouter": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.severity",
+          "StringEquals": "P1",
+          "Next": "ParallelP1Response"
+        },
+        {
+          "Variable": "$.severity",
+          "StringEquals": "P2",
+          "Next": "GenerateRunbook"
+        }
+      ],
+      "Default": "GenerateRunbook"
+    },
+
+    "ParallelP1Response": {
+      "Type": "Parallel",
+      "Comment": "For P1 incidents, generate runbook AND send immediate alert at the same time",
+      "Branches": [
+        {
+          "StartAt": "GenerateRunbookP1",
+          "States": {
+            "GenerateRunbookP1": {
+              "Type": "Task",
+              "Resource": "${RootCauseAgentLambdaArn}",
+              "Parameters": {
+                "action": "generate_runbook",
+                "incident_id.$": "$.incident_id",
+                "state.$": "$.state"
+              },
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "SendImmediateAlert",
+          "States": {
+            "SendImmediateAlert": {
+              "Type": "Task",
+              "Resource": "${RootCauseAgentLambdaArn}",
+              "Parameters": {
+                "action": "send_immediate_alert",
+                "incident_id.$": "$.incident_id",
+                "state.$": "$.state"
+              },
+              "End": true
+            }
+          }
+        }
+      ],
+      "ResultPath": "$.parallel_result",
+      "Next": "PublishReport"
+    },
+
+    "GenerateRunbook": {
+      "Type": "Task",
+      "Resource": "${RootCauseAgentLambdaArn}",
+      "Parameters": {
+        "action": "generate_runbook",
+        "incident_id.$": "$.incident_id",
+        "state.$": "$.state"
+      },
+      "ResultPath": "$.state",
+      "TimeoutSeconds": 300,
+      "Next": "PublishReport"
+    },
+
+    "PublishReport": {
+      "Type": "Task",
+      "Resource": "${RootCauseAgentLambdaArn}",
+      "Parameters": {
+        "action": "publish_report",
+        "incident_id.$": "$.incident_id",
+        "state.$": "$.state"
+      },
+      "ResultPath": "$.final",
+      "End": true
+    },
+
+    "HandleFetchError": {
+      "Type": "Task",
+      "Resource": "${RootCauseAgentLambdaArn}",
+      "Parameters": {
+        "action": "publish_report",
+        "incident_id.$": "$.incident_id",
+        "state": {
+          "root_cause_analysis": {
+            "root_cause": "Unable to fetch recent changes — manual investigation required",
+            "confidence": "low"
+          }
+        }
+      },
+      "End": true
+    }
+  }
+}
