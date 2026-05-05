@@ -1,0 +1,76 @@
+# sentinel.yaml — drop this file in your project root and run `sentinel init`
+# Docs: https://github.com/VishalVinayRam/Project-KEMM
+
+namespace: my-team   # used to isolate resources in multi-tenant deployments
+
+git_provider:
+  provider: github        # github | gitlab
+  token: ${GITHUB_TOKEN}
+  repo: my-org/my-repo
+  webhook_secret: ${GITHUB_WEBHOOK_SECRET}
+
+  # For self-hosted GitLab:
+  # provider: gitlab
+  # base_url: https://gitlab.mycompany.com/api/v4
+
+cloud_provider:
+  provider: floci         # floci (local) | aws | gcp
+  region: us-east-1
+  endpoint: http://localhost:4566   # only needed for floci
+
+  # For real AWS (remove endpoint line above):
+  # provider: aws
+  # region: us-east-1
+
+  # For GCP:
+  # provider: gcp
+  # project_id: my-gcp-project
+
+llm:
+  provider: kserve        # kserve | openai | anthropic
+  endpoint: http://localhost:8080
+  model: phi-3-lite
+
+  # For OpenAI:
+  # provider: openai
+  # model: gpt-4o-mini
+  # api_key: ${OPENAI_API_KEY}
+
+  # For Anthropic:
+  # provider: anthropic
+  # model: claude-haiku-4-5-20251001
+  # api_key: ${ANTHROPIC_API_KEY}
+
+rag:
+  enabled: true
+  index_paths:
+    - src/
+    - docs/
+    - README.md
+  exclude:
+    - node_modules/
+    - .git/
+    - __pycache__/
+    - "*.lock"
+  chunk_size: 512
+  chunk_overlap: 64
+  top_k: 5
+
+pr_agent:
+  enabled: true
+  block_on:
+    - critical
+    - high
+  max_diff_lines: 500
+
+incident:
+  alert_sources:
+    - cloudwatch         # cloudwatch | prometheus | datadog
+  signal_threshold: 2    # how many failing signals = real incident
+  auto_remediate: false
+  notification:
+    - slack
+
+alerting:
+  provider: slack
+  webhook_url: ${SLACK_WEBHOOK_URL}
