@@ -89,5 +89,8 @@ def _build_alerting(cfg: dict) -> Optional[BaseAlertingProvider]:
     provider = cfg.get("provider")
     if provider == "slack":
         from sentinel.providers.alerting.slack import SlackProvider
-        return SlackProvider(webhook_url=cfg["webhook_url"])
+        return SlackProvider(webhook_url=cfg["webhook_url"], channel=cfg.get("channel", ""))
+    if provider == "pagerduty":
+        from sentinel.providers.alerting.pagerduty import PagerDutyProvider
+        return PagerDutyProvider(routing_key=cfg["routing_key"])
     return None
