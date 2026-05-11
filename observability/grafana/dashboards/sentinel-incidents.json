@@ -1,0 +1,141 @@
+{
+  "title": "Sentinel — Incident Overview",
+  "uid": "sentinel-incidents",
+  "version": 1,
+  "schemaVersion": 36,
+  "tags": ["sentinel", "incidents"],
+  "timezone": "browser",
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Open Incidents by Severity",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum by (severity) (sentinel_incidents_open_total)",
+          "legendFormat": "{{ severity }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Incident Rate (last 1h)",
+      "type": "timeseries",
+      "gridPos": { "x": 6, "y": 0, "w": 10, "h": 4 },
+      "targets": [
+        {
+          "expr": "rate(sentinel_incidents_total[5m])",
+          "legendFormat": "incidents/sec"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "False Positive Rate",
+      "type": "gauge",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "rate(sentinel_alerts_false_positive_total[1h]) / rate(sentinel_alerts_total[1h]) * 100",
+          "legendFormat": "% false positives"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 20 },
+              { "color": "red", "value": 40 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Mean Time to Detect (MTTD)",
+      "type": "stat",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "targets": [
+        {
+          "expr": "avg(sentinel_incident_detection_duration_seconds)",
+          "legendFormat": "MTTD"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 5,
+      "title": "Incidents Timeline",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "expr": "sentinel_incidents_total",
+          "legendFormat": "Total"
+        },
+        {
+          "expr": "sentinel_incidents_open_total",
+          "legendFormat": "Open"
+        },
+        {
+          "expr": "sentinel_incidents_resolved_total",
+          "legendFormat": "Resolved"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "PR Security Reviews",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "rate(sentinel_pr_reviews_total[5m])",
+          "legendFormat": "Reviews/sec"
+        },
+        {
+          "expr": "rate(sentinel_pr_reviews_blocked_total[5m])",
+          "legendFormat": "Blocked/sec"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "LLM Inference Latency (p99)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, rate(sentinel_llm_request_duration_seconds_bucket[5m]))",
+          "legendFormat": "p99 latency"
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(sentinel_llm_request_duration_seconds_bucket[5m]))",
+          "legendFormat": "p50 latency"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    }
+  ]
+}
