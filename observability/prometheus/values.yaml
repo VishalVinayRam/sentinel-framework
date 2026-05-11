@@ -1,0 +1,80 @@
+prometheus:
+  prometheusSpec:
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    additionalScrapeConfigs:
+      - job_name: sentinel-lambdas
+        static_configs:
+          - targets: ["localhost:9090"]
+        metrics_path: /metrics
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: instance
+
+      - job_name: kserve-inference
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: ["ml-ops-lite"]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: kserve-container
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+      - job_name: sentinel-kinesis
+        static_configs:
+          - targets: ["localhost:4566"]
+        metrics_path: /_aws/metrics
+
+    additionalAlertManagerConfigs:
+      - scheme: http
+        static_configs:
+          - targets: ["alertmanager:9093"]
+
+alertmanager:
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ["alertname", "severity"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: "sentinel-slack"
+      routes:
+        - match:
+            severity: P1
+          receiver: "sentinel-pagerduty"
+          continue: true
+        - match:
+            severity: P2
+          receiver: "sentinel-slack"
+    receivers:
+      - name: "sentinel-slack"
+        slack_configs:
+          - api_url: "${SLACK_WEBHOOK_URL}"
+            channel: "#incidents"
+            title: "[{{ .Status | toUpper }}] {{ .CommonAnnotations.summary }}"
+            text: "{{ .CommonAnnotations.description }}"
+      - name: "sentinel-pagerduty"
+        pagerduty_configs:
+          - routing_key: "${PAGERDUTY_ROUTING_KEY}"
+            description: "{{ .CommonAnnotations.summary }}"
+
+grafana:
+  enabled: true
+  adminPassword: "${GRAFANA_ADMIN_PASSWORD}"
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: sentinel
+          orgId: 1
+          folder: Sentinel
+          type: file
+          options:
+            path: /var/lib/grafana/dashboards/sentinel
+  dashboardsConfigMaps:
+    sentinel: sentinel-grafana-dashboards
