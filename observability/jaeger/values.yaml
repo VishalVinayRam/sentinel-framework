@@ -1,0 +1,41 @@
+provisionDataStore:
+  cassandra: false
+  elasticsearch: false
+  kafka: false
+
+allInOne:
+  enabled: true
+  image:
+    tag: "1.54"
+  ingress:
+    enabled: false
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  extraEnv:
+    - name: SPAN_STORAGE_TYPE
+      value: memory
+    - name: MEMORY_MAX_TRACES
+      value: "50000"
+
+collector:
+  enabled: false
+
+query:
+  enabled: false
+
+agent:
+  enabled: false
+
+storage:
+  type: memory
+
+ingress:
+  enabled: false
+
+hotrod:
+  enabled: false
