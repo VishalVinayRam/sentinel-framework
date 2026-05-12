@@ -1,0 +1,72 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/vishalvinayram/sentinel
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"
+
+nameOverride: ""
+fullnameOverride: ""
+
+config:
+  namespace: default
+  gitProvider:
+    provider: github
+    repo: my-org/my-repo
+  cloudProvider:
+    provider: aws
+    region: us-east-1
+  llm:
+    provider: kserve
+    endpoint: http://kserve.ml-ops-lite.svc:8080
+    model: phi-3-lite
+  prAgent:
+    enabled: true
+    blockOn:
+      - critical
+      - high
+  incident:
+    signalThreshold: 2
+    autoRemediate: false
+  rag:
+    enabled: true
+    indexPaths:
+      - src/
+      - docs/
+
+secrets:
+  githubToken: ""
+  githubWebhookSecret: ""
+  slackWebhookUrl: ""
+  dbPassword: ""
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: nginx
+  host: sentinel.example.com
+  tls: []
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+postgresql:
+  enabled: true
+  auth:
+    database: sentinel
+    username: sentinel
+  primary:
+    persistence:
+      size: 5Gi
+
+serviceAccount:
+  create: true
+  name: ""

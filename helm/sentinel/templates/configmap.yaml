@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sentinel.fullname" . }}-config
+  labels:
+    {{- include "sentinel.labels" . | nindent 4 }}
+data:
+  sentinel.yaml: |
+    namespace: {{ .Values.config.namespace }}
+    git_provider:
+      provider: {{ .Values.config.gitProvider.provider }}
+      repo: {{ .Values.config.gitProvider.repo }}
+      token: ${SENTINEL_GIT_TOKEN}
+      webhook_secret: ${SENTINEL_WEBHOOK_SECRET}
+    cloud_provider:
+      provider: {{ .Values.config.cloudProvider.provider }}
+      region: {{ .Values.config.cloudProvider.region }}
+    llm:
+      provider: {{ .Values.config.llm.provider }}
+      endpoint: {{ .Values.config.llm.endpoint }}
+      model: {{ .Values.config.llm.model }}
+    rag:
+      enabled: {{ .Values.config.rag.enabled }}
+      index_paths:
+        {{- range .Values.config.rag.indexPaths }}
+        - {{ . }}
+        {{- end }}
+    pr_agent:
+      enabled: {{ .Values.config.prAgent.enabled }}
+      block_on:
+        {{- range .Values.config.prAgent.blockOn }}
+        - {{ . }}
+        {{- end }}
+    incident:
+      signal_threshold: {{ .Values.config.incident.signalThreshold }}
+      auto_remediate: {{ .Values.config.incident.autoRemediate }}

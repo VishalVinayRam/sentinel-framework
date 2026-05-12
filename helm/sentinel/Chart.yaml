@@ -1,0 +1,15 @@
+apiVersion: v2
+name: sentinel
+description: AI-powered incident response framework — plug into any environment
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - incident-response
+  - mlops
+  - sre
+  - ai
+home: https://github.com/VishalVinayRam/Project-KEMM
+maintainers:
+  - name: Vishal Vinay Ram
+    email: vishalvinayram5432@gmail.com
