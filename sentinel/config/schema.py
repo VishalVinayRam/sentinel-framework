@@ -60,6 +60,36 @@ class AlertingConfig:
 
 
 @dataclass
+class LokiConfig:
+    url: str = ""                    # e.g. https://loki.company.com:3100
+    username: str = ""               # for Grafana Cloud Loki
+    password: str = ""
+    tenant_id: str = ""              # X-Scope-OrgID header for multi-tenant Loki
+
+
+@dataclass
+class MimirConfig:
+    url: str = ""                    # remote_write endpoint, e.g. https://mimir.company.com/api/v1/push
+    username: str = ""
+    password: str = ""
+    metric_prefix: str = "sentinel"  # only push metrics matching this prefix
+
+
+@dataclass
+class GrafanaConfig:
+    url: str = ""                    # e.g. https://grafana.company.com
+    api_key: str = ""                # service account token
+    folder: str = "Sentinel"        # dashboard folder to create/update in
+
+
+@dataclass
+class ObservabilityConfig:
+    loki: Optional[LokiConfig] = None
+    mimir: Optional[MimirConfig] = None
+    grafana: Optional[GrafanaConfig] = None
+
+
+@dataclass
 class SentinelConfig:
     git_provider: GitConfig
     cloud_provider: CloudConfig
@@ -68,4 +98,5 @@ class SentinelConfig:
     incident: IncidentConfig = field(default_factory=IncidentConfig)
     pr_agent: PRAgentConfig = field(default_factory=PRAgentConfig)
     alerting: Optional[AlertingConfig] = None
+    observability: Optional[ObservabilityConfig] = None
     namespace: str = "default"       # used for multi-tenant resource isolation

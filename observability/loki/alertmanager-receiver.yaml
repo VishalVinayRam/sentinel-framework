@@ -1,0 +1,28 @@
+# AlertManager config snippet — add this to your existing alertmanager.yaml
+# to route Loki sentinel alerts to the loki-bridge Lambda endpoint.
+#
+# If you use Grafana unified alerting, configure the contact point
+# as a "webhook" pointing to the same URL.
+
+# Add to your existing receivers list:
+receivers:
+  - name: sentinel-loki-bridge
+    webhook_configs:
+      - url: "${SENTINEL_LOKI_BRIDGE_URL}"   # API Gateway URL of loki-bridge Lambda
+        send_resolved: true
+        http_config:
+          # Optional: add an API key header if you put a Lambda authorizer on the gateway
+          # authorization:
+          #   credentials: "${SENTINEL_BRIDGE_API_KEY}"
+
+# Add to your existing route tree:
+route:
+  routes:
+    - matchers:
+        - sentinel="true"
+      receiver: sentinel-loki-bridge
+      group_by: [service, alertname]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 1h
+      continue: true   # keep routing to default receiver too

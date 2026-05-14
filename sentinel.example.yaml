@@ -65,7 +65,7 @@ pr_agent:
 
 incident:
   alert_sources:
-    - cloudwatch         # cloudwatch | prometheus | datadog
+    - cloudwatch         # cloudwatch | loki | prometheus
   signal_threshold: 2    # how many failing signals = real incident
   auto_remediate: false
   notification:
@@ -74,3 +74,32 @@ incident:
 alerting:
   provider: slack
   webhook_url: ${SLACK_WEBHOOK_URL}
+
+# ── External observability stack (optional) ───────────────────────────────────
+# Sentinel runs on AWS but can connect to Grafana / Mimir / Loki hosted
+# anywhere — GCP, on-prem, Grafana Cloud, etc. All connections are HTTPS.
+#
+observability:
+
+  # Loki — Sentinel forwards confirmed incidents back to Loki as structured
+  # log entries, and the loki-bridge Lambda receives Loki alert webhooks.
+  loki:
+    url: ${LOKI_URL}                  # e.g. https://loki.company.com:3100
+    # username: ${LOKI_USERNAME}      # Grafana Cloud Loki auth
+    # password: ${LOKI_PASSWORD}
+    # tenant_id: my-team              # X-Scope-OrgID for multi-tenant Loki
+
+  # Mimir — Prometheus remote_writes sentinel_* metrics here so they land
+  # in your existing long-term metrics store alongside app metrics.
+  mimir:
+    url: ${MIMIR_REMOTE_WRITE_URL}    # e.g. https://mimir.company.com/api/v1/push
+    # username: ${MIMIR_USERNAME}     # Grafana Cloud Mimir auth
+    # password: ${MIMIR_PASSWORD}
+    metric_prefix: sentinel           # only push metrics matching this prefix
+
+  # Grafana — run `sentinel grafana push` to import the Sentinel dashboard
+  # into your existing Grafana instance without touching its other dashboards.
+  grafana:
+    url: ${GRAFANA_URL}               # e.g. https://grafana.company.com
+    api_key: ${GRAFANA_API_KEY}       # Grafana service account token
+    folder: Sentinel                  # folder to create / update

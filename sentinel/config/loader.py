@@ -4,8 +4,9 @@ from pathlib import Path
 import yaml
 
 from .schema import (
-    AlertingConfig, CloudConfig, GitConfig, IncidentConfig,
-    LLMConfig, PRAgentConfig, RAGConfig, SentinelConfig,
+    AlertingConfig, CloudConfig, GitConfig, GrafanaConfig, IncidentConfig,
+    LLMConfig, LokiConfig, MimirConfig, ObservabilityConfig, PRAgentConfig,
+    RAGConfig, SentinelConfig,
 )
 
 _ENV_PREFIX = "SENTINEL_"
@@ -56,6 +57,7 @@ def _parse(raw: dict) -> SentinelConfig:
     incident_raw = raw.get("incident", {})
     pr_raw = raw.get("pr_agent", {})
     alerting_raw = raw.get("alerting")
+    obs_raw = raw.get("observability")
 
     return SentinelConfig(
         namespace=raw.get("namespace", "default"),
@@ -98,4 +100,16 @@ def _parse(raw: dict) -> SentinelConfig:
             max_diff_lines=pr_raw.get("max_diff_lines", 500),
         ),
         alerting=AlertingConfig(**alerting_raw) if alerting_raw else None,
+        observability=_parse_observability(obs_raw) if obs_raw else None,
+    )
+
+
+def _parse_observability(raw: dict) -> ObservabilityConfig:
+    loki_raw = raw.get("loki")
+    mimir_raw = raw.get("mimir")
+    grafana_raw = raw.get("grafana")
+    return ObservabilityConfig(
+        loki=LokiConfig(**loki_raw) if loki_raw else None,
+        mimir=MimirConfig(**mimir_raw) if mimir_raw else None,
+        grafana=GrafanaConfig(**grafana_raw) if grafana_raw else None,
     )

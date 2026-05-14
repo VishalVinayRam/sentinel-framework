@@ -1,0 +1,59 @@
+# Loki alert rules that fire into the Sentinel loki-bridge Lambda.
+#
+# Deploy these to your Loki instance:
+#   kubectl apply -f observability/loki/alert-rules.yaml   (if using Loki on k8s)
+#   or paste into Grafana → Alerting → Alert rules (if using Grafana unified alerting)
+#
+# Route: Loki → AlertManager → sentinel-receiver → loki-bridge Lambda → Kinesis → Sentinel pipeline
+
+groups:
+  - name: sentinel-service-health
+    interval: 1m
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate({job=~".+"} |= "ERROR" [5m])) by (job) > 5
+        for: 2m
+        labels:
+          severity: warning
+          service: "{{ $labels.job }}"
+          sentinel: "true"
+        annotations:
+          summary: "High error rate in {{ $labels.job }}"
+          description: "{{ $labels.job }} is logging more than 5 errors/sec over the last 5 minutes"
+
+      - alert: CriticalPanic
+        expr: |
+          sum(rate({job=~".+"} |~ "(?i)(panic|fatal|oom killed)" [2m])) by (job) > 0
+        for: 30s
+        labels:
+          severity: critical
+          service: "{{ $labels.job }}"
+          sentinel: "true"
+        annotations:
+          summary: "Panic / fatal error in {{ $labels.job }}"
+          description: "Panic or fatal-level log detected — possible crash loop"
+
+      - alert: Http5xxSpike
+        expr: |
+          sum(rate({job=~".+"} |~ "HTTP/[0-9.]+ 5[0-9]{2}" [5m])) by (job) > 2
+        for: 3m
+        labels:
+          severity: error
+          service: "{{ $labels.job }}"
+          sentinel: "true"
+        annotations:
+          summary: "5xx spike in {{ $labels.job }}"
+          description: "More than 2 HTTP 5xx responses/sec in the last 5 minutes"
+
+      - alert: SlowResponses
+        expr: |
+          avg_over_time({job=~".+"} | logfmt | duration > 2s [10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: "{{ $labels.job }}"
+          sentinel: "true"
+        annotations:
+          summary: "Slow responses in {{ $labels.job }}"
+          description: "Average response duration exceeds 2s over the last 10 minutes"
