@@ -1,3 +1,4 @@
 fastapi>=0.100
 uvicorn[standard]>=0.23
 boto3>=1.34
+requests>=2.31
