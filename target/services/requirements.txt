@@ -1,0 +1,4 @@
+flask>=3.0
+prometheus-client>=0.19
+boto3>=1.34
+requests>=2.31
