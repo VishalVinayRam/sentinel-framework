@@ -32,6 +32,8 @@ step() { echo -e "\n${BOLD}${CYAN}── $* ${RESET}"; }
 FLOCI_ENDPOINT="http://localhost:4566"
 AWS_REGION="us-east-1"
 DASHBOARD_PORT=8501
+KSERVE_PORT=8080
+OLLAMA_MODEL="${SENTINEL_OLLAMA_MODEL:-phi3:mini}"   # override: SENTINEL_OLLAMA_MODEL=tinyllama ./setup_demo.sh
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 export FLOCI_ENDPOINT AWS_REGION
@@ -41,6 +43,8 @@ export AWS_SECRET_ACCESS_KEY="test"
 export INCIDENTS_TABLE="sentinel-incidents"
 export VALIDATION_RESULTS_TABLE="sentinel-validation-results"
 export PR_REVIEWS_TABLE="sentinel-pr-reviews"
+export KSERVE_ENDPOINT="http://localhost:${KSERVE_PORT}"
+export KSERVE_MODEL="$OLLAMA_MODEL"
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 clear
@@ -64,7 +68,7 @@ sleep 0.5
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 1 — Prerequisites
 # ═════════════════════════════════════════════════════════════════════════════
-step "Step 1/6 — Checking prerequisites"
+step "Step 1/7 — Checking prerequisites"
 
 # Python
 python3 --version &>/dev/null || die "Python 3 not found. Install Python 3.10+"
@@ -89,7 +93,7 @@ ok "curl"
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 2 — Python dependencies
 # ═════════════════════════════════════════════════════════════════════════════
-step "Step 2/6 — Installing Python dependencies"
+step "Step 2/7 — Installing Python dependencies"
 
 pip install --quiet --upgrade \
   boto3 \
@@ -105,7 +109,7 @@ ok "boto3, fastapi, uvicorn, pyyaml, click, requests"
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 3 — Start Floci if not running
 # ═════════════════════════════════════════════════════════════════════════════
-step "Step 3/6 — Floci (local AWS emulator)"
+step "Step 3/7 — Floci (local AWS emulator)"
 
 if curl -sf "$FLOCI_ENDPOINT/_localstack/health" &>/dev/null; then
   FLOCI_VER=$(curl -sf "$FLOCI_ENDPOINT/_localstack/health" | python3 -c "import sys,json; print(json.load(sys.stdin).get('version','?'))" 2>/dev/null || echo "?")
@@ -138,9 +142,98 @@ else
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
-# STEP 4 — Create AWS resources in Floci
+# STEP 4 — Ollama + local KServe bridge (real AI inference)
 # ═════════════════════════════════════════════════════════════════════════════
-step "Step 4/6 — Provisioning AWS resources in Floci"
+step "Step 4/7 — Local AI (Ollama + KServe bridge)"
+
+OLLAMA_OK=false
+
+if command -v ollama &>/dev/null; then
+  # Make sure the Ollama daemon is running
+  if ! curl -sf http://localhost:11434/api/tags &>/dev/null; then
+    info "Starting Ollama daemon…"
+    ollama serve &>/dev/null &
+    OLLAMA_SERVE_PID=$!
+    for i in $(seq 1 15); do
+      curl -sf http://localhost:11434/api/tags &>/dev/null && break
+      sleep 1
+    done
+  fi
+
+  if curl -sf http://localhost:11434/api/tags &>/dev/null; then
+    ok "Ollama daemon running at http://localhost:11434"
+
+    # Pick the best available instruction-following model.
+    # Coding models (deepseek-coder, codellama, starcoder) won't follow JSON prompts.
+    PREFERRED_MODELS="phi3:mini phi3 llama3.2:3b llama3.2:1b llama3 mistral:7b mistral gemma2:2b gemma:2b qwen2:7b qwen2:1.5b"
+    AVAILABLE_MODELS=$(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}')
+
+    if [ -n "$AVAILABLE_MODELS" ]; then
+      for candidate in $PREFERRED_MODELS; do
+        base="${candidate%%:*}"
+        if echo "$AVAILABLE_MODELS" | grep -q "^${base}"; then
+          FOUND=$(echo "$AVAILABLE_MODELS" | grep "^${base}" | head -1)
+          OLLAMA_MODEL="$FOUND"
+          ok "Using installed model: $OLLAMA_MODEL"
+          break
+        fi
+      done
+    fi
+
+    # If nothing suitable is installed, pull phi3:mini
+    if ! echo "$AVAILABLE_MODELS" | grep -qE "^(phi3|llama3|mistral|gemma|qwen2)[^-]"; then
+      info "No general-purpose instruction model found. Pulling phi3:mini (~2.3 GB)…"
+      if ollama pull phi3:mini; then
+        OLLAMA_MODEL="phi3:mini"
+        ok "phi3:mini pulled successfully"
+      else
+        warn "Model pull failed — AI will use fallback RCA text"
+        OLLAMA_MODEL=""
+      fi
+    fi
+
+    # Kill any existing KServe bridge on this port
+    fuser -k ${KSERVE_PORT}/tcp &>/dev/null || true
+    sleep 0.3
+
+    export KSERVE_MODEL="$OLLAMA_MODEL"
+    info "Starting KServe bridge on port $KSERVE_PORT (model: $OLLAMA_MODEL)…"
+    OLLAMA_MODEL="$OLLAMA_MODEL" \
+    PYTHONPATH="$PROJECT_ROOT/services/kserve-local" \
+      uvicorn server:app \
+        --app-dir "$PROJECT_ROOT/services/kserve-local" \
+        --host 0.0.0.0 --port "$KSERVE_PORT" \
+        --log-level warning \
+      &>/tmp/sentinel-kserve.log &
+    KSERVE_PID=$!
+
+    # Wait for bridge to be ready
+    for i in $(seq 1 10); do
+      curl -sf "http://localhost:${KSERVE_PORT}/v2/health/ready" &>/dev/null && break
+      sleep 1
+    done
+
+    if curl -sf "http://localhost:${KSERVE_PORT}/v2/health/ready" &>/dev/null; then
+      ok "KServe bridge running at http://localhost:${KSERVE_PORT} (model: $OLLAMA_MODEL)"
+      OLLAMA_OK=true
+    else
+      warn "KServe bridge didn't start — check /tmp/sentinel-kserve.log"
+      warn "Demo will use fallback RCA text instead of live AI"
+    fi
+  else
+    warn "Ollama installed but daemon didn't start — skipping AI step"
+    warn "Demo will use fallback RCA text instead of live AI"
+  fi
+else
+  warn "Ollama not installed — demo will use fallback RCA text"
+  warn "To enable live AI: https://ollama.com  →  ollama pull $OLLAMA_MODEL"
+  info "Then re-run: ./setup_demo.sh"
+fi
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STEP 5 — Create AWS resources in Floci
+# ═════════════════════════════════════════════════════════════════════════════
+step "Step 5/7 — Provisioning AWS resources in Floci"
 
 python3 - <<'PYEOF'
 import boto3, sys
@@ -226,7 +319,7 @@ PYEOF
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 5 — Seed demo data
 # ═════════════════════════════════════════════════════════════════════════════
-step "Step 5/6 — Seeding demo data"
+step "Step 6/7 — Seeding demo data"
 
 python3 - <<'PYEOF'
 import boto3, uuid, sys
@@ -486,29 +579,35 @@ PYEOF
 # ═════════════════════════════════════════════════════════════════════════════
 # STEP 6 — Start the dashboard
 # ═════════════════════════════════════════════════════════════════════════════
-step "Step 6/6 — Starting the Sentinel dashboard"
+step "Step 7/7 — Starting the Sentinel dashboard"
 
 # Kill any existing dashboard on this port
 fuser -k ${DASHBOARD_PORT}/tcp &>/dev/null || true
 sleep 0.5
 
 echo ""
+AI_STATUS="fallback text (Ollama not running)"
+$OLLAMA_OK && AI_STATUS="live AI via Ollama + phi3:mini  ✓"
+
 echo -e "${BOLD}${GREEN}"
-echo "  ┌──────────────────────────────────────────────┐"
-echo "  │                                              │"
-echo "  │   ✓  Sentinel is ready!                     │"
-echo "  │                                              │"
-echo "  │   Open:  http://localhost:${DASHBOARD_PORT}             │"
-echo "  │                                              │"
-echo "  │   Demo flow:                                 │"
-echo "  │   1. Overview — see stats + open incidents   │"
-echo "  │   2. Incidents — click any row for full RCA  │"
-echo "  │   3. Validation Log — real vs false-positive │"
-echo "  │   4. Demo Mode — fire a live P1 incident     │"
-echo "  │                                              │"
-echo "  │   Press Ctrl+C to stop the server            │"
-echo "  │                                              │"
-echo "  └──────────────────────────────────────────────┘"
+echo "  ┌──────────────────────────────────────────────────┐"
+echo "  │                                                  │"
+echo "  │   ✓  Sentinel is ready!                         │"
+echo "  │                                                  │"
+echo "  │   Dashboard:  http://localhost:${DASHBOARD_PORT}              │"
+echo "  │   KServe AI:  http://localhost:${KSERVE_PORT}               │"
+echo "  │   AI engine:  ${AI_STATUS}   │"
+echo "  │                                                  │"
+echo "  │   Demo flow:                                     │"
+echo "  │   1. Overview — stats + open incidents           │"
+echo "  │   2. Incidents — click any row for RCA           │"
+echo "  │   3. Validation Log — real vs false-positive     │"
+echo "  │   4. Demo Mode — fire a live incident            │"
+echo "  │      (AI RCA appears in ~30 s via Ollama)        │"
+echo "  │                                                  │"
+echo "  │   Press Ctrl+C to stop the dashboard             │"
+echo "  │                                                  │"
+echo "  └──────────────────────────────────────────────────┘"
 echo -e "${RESET}"
 
 # Try to open the browser automatically
