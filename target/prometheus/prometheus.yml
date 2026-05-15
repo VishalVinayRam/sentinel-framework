@@ -1,0 +1,40 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: auth-service
+    static_configs:
+      - targets: ["host.docker.internal:5001"]
+    metrics_path: /metrics
+    relabel_configs:
+      - target_label: service
+        replacement: auth-service
+
+  - job_name: payments-service
+    static_configs:
+      - targets: ["host.docker.internal:5002"]
+    metrics_path: /metrics
+    relabel_configs:
+      - target_label: service
+        replacement: payments-service
+
+  - job_name: search-api
+    static_configs:
+      - targets: ["host.docker.internal:5003"]
+    metrics_path: /metrics
+    relabel_configs:
+      - target_label: service
+        replacement: search-api
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
