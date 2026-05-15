@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: target-services
+    orgId: 1
+    folder: Target Services
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

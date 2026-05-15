@@ -1,0 +1,72 @@
+{
+  "title": "Target Services — Request Rates & Errors",
+  "uid": "target-services-v1",
+  "schemaVersion": 38,
+  "time": { "from": "now-30m", "to": "now" },
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate (req/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "rate(auth_requests_total[1m])",     "legendFormat": "auth-service" },
+        { "expr": "rate(payments_requests_total[1m])", "legendFormat": "payments-service" },
+        { "expr": "rate(search_requests_total[1m])",   "legendFormat": "search-api" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error Rate (errors/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "rate(auth_errors_total[1m])",     "legendFormat": "auth errors" },
+        { "expr": "rate(payments_errors_total[1m])", "legendFormat": "payments errors" },
+        { "expr": "rate(search_errors_total[1m])",   "legendFormat": "search errors" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "p99 Latency (seconds)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.99, rate(auth_latency_seconds_bucket[1m]))",     "legendFormat": "auth p99" },
+        { "expr": "histogram_quantile(0.99, rate(payments_latency_seconds_bucket[1m]))", "legendFormat": "payments p99" },
+        { "expr": "histogram_quantile(0.99, rate(search_latency_seconds_bucket[1m]))",   "legendFormat": "search p99" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Error Rate %",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 16, "w": 8, "h": 6 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "minVizValue": 0, "maxVizValue": 100 },
+      "targets": [
+        { "expr": "100 * rate(auth_errors_total[1m]) / clamp_min(rate(auth_requests_total[1m]), 0.001)", "legendFormat": "auth" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Error Rate %",
+      "type": "gauge",
+      "gridPos": { "x": 8, "y": 16, "w": 8, "h": 6 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "minVizValue": 0, "maxVizValue": 100 },
+      "targets": [
+        { "expr": "100 * rate(payments_errors_total[1m]) / clamp_min(rate(payments_requests_total[1m]), 0.001)", "legendFormat": "payments" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Error Rate %",
+      "type": "gauge",
+      "gridPos": { "x": 16, "y": 16, "w": 8, "h": 6 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "minVizValue": 0, "maxVizValue": 100 },
+      "targets": [
+        { "expr": "100 * rate(search_errors_total[1m]) / clamp_min(rate(search_requests_total[1m]), 0.001)", "legendFormat": "search" }
+      ]
+    }
+  ]
+}
