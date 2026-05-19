@@ -14,6 +14,7 @@ import os
 import sys
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
@@ -214,10 +215,10 @@ def fire_demo_incident(payload: dict):
             "degradation_trend":  "worsening" if severity in ("P1", "P2") else "stable",
             "affected_components": [service, "database", "cache"] if severity == "P1" else [service],
             "log_sample_size":    250,
-            "error_rate_in_sample": 0.18 if severity == "P1" else 0.07 if severity == "P2" else 0.02,
+            "error_rate_in_sample": Decimal("0.18") if severity == "P1" else Decimal("0.07") if severity == "P2" else Decimal("0.02"),
         },
         "impact_scope": {
-            "error_rate_in_sample": 0.18 if severity == "P1" else 0.07 if severity == "P2" else 0.02,
+            "error_rate_in_sample": Decimal("0.18") if severity == "P1" else Decimal("0.07") if severity == "P2" else Decimal("0.02"),
             "users_impacted_pct":  85 if severity == "P1" else 30 if severity == "P2" else 5,
             "summary":             rca_map.get(severity, "")[:120] + "…",
         },
