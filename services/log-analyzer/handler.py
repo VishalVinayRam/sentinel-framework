@@ -2,6 +2,7 @@ import json
 import base64
 import os
 import re
+from decimal import Decimal
 from datetime import datetime, timezone
 from collections import Counter
 
@@ -96,9 +97,10 @@ def _merge_severity(rule: str, ml: str) -> str:
 
 def _estimate_impact(logs: list, ml_analysis: dict) -> dict:
     error_count = sum(1 for l in logs if re.search(r"error|exception|500", str(l), re.I))
+    # DynamoDB requires Decimal for all numeric types — no plain floats allowed
     return {
-        "error_rate_in_sample": round(error_count / max(len(logs), 1), 3),
-        "users_impacted_pct": ml_analysis.get("users_impacted", 0),
+        "error_rate_in_sample": Decimal(str(round(error_count / max(len(logs), 1), 3))),
+        "users_impacted_pct": Decimal(str(ml_analysis.get("users_impacted", 0))),
         "summary": ml_analysis.get("summary", ""),
     }
 
@@ -119,6 +121,13 @@ def _update_incident(incident_id: str, result: dict) -> None:
     )
 
 
+class _DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
+
+
 def _publish_severity_event(incident_id: str, result: dict) -> None:
     if not incident_id:
         return
@@ -130,6 +139,6 @@ def _publish_severity_event(incident_id: str, result: dict) -> None:
             "aggregate_id": incident_id,
             "payload": result,
             "timestamp": result["analyzed_at"],
-        }),
+        }, cls=_DecimalEncoder),
         PartitionKey=incident_id,
     )
