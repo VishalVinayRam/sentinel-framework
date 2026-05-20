@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from decimal import Decimal
 from datetime import datetime, timezone
 
 import requests
@@ -81,16 +82,18 @@ def _check_health_endpoint(url: str) -> bool:
 def _dispatch_smoke_test(alert_id: str, service: str, alert: dict) -> bool:
     """Sends a smoke test job to SQS and returns a mock result for now."""
     sqs_client = sqs()
-    sqs_client.send_message(
-        QueueUrl=VALIDATION_JOBS_QUEUE_URL,
-        MessageBody=json.dumps({
+    msg_kwargs = {
+        "QueueUrl": VALIDATION_JOBS_QUEUE_URL,
+        "MessageBody": json.dumps({
             "alert_id": alert_id,
             "service": service,
             "test_type": "smoke",
             "alert_context": alert,
         }),
-        MessageGroupId=service if VALIDATION_JOBS_QUEUE_URL.endswith(".fifo") else None,
-    )
+    }
+    if VALIDATION_JOBS_QUEUE_URL.endswith(".fifo"):
+        msg_kwargs["MessageGroupId"] = service
+    sqs_client.send_message(**msg_kwargs)
     # Synchronous smoke test result would come from a separate executor
     # For now we check the alert's error rate as a proxy
     return alert.get("error_rate", 0) < 0.05
@@ -103,9 +106,20 @@ def _check_metric_consensus(alert: dict) -> bool:
     return not (error_rate > 0.05 or p99_latency > 2000)
 
 
+def _to_dynamodb_safe(obj):
+    """Recursively convert floats to Decimal for DynamoDB compatibility."""
+    if isinstance(obj, float):
+        return Decimal(str(obj))
+    if isinstance(obj, dict):
+        return {k: _to_dynamodb_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_to_dynamodb_safe(v) for v in obj]
+    return obj
+
+
 def _store_result(result: dict) -> None:
     table = dynamodb().Table(VALIDATION_RESULTS_TABLE)
-    table.put_item(Item=result)
+    table.put_item(Item=_to_dynamodb_safe(result))
 
 
 def _publish_confirmed_incident(result: dict) -> None:
