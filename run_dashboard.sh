@@ -11,6 +11,8 @@ export AWS_DEFAULT_REGION="us-east-1"
 export INCIDENTS_TABLE="sentinel-incidents"
 export VALIDATION_RESULTS_TABLE="sentinel-validation-results"
 export PR_REVIEWS_TABLE="sentinel-pr-reviews"
+export KSERVE_ENDPOINT="${KSERVE_ENDPOINT:-http://localhost:8080}"
+export KSERVE_MODEL="${KSERVE_MODEL:-phi3:mini}"
 
 echo ""
 echo "  ┌─────────────────────────────────────────┐"

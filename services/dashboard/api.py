@@ -11,7 +11,9 @@ Run:
 
 import json
 import os
+import re
 import sys
+import threading
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -19,6 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 import boto3
+import requests as _requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -40,6 +43,9 @@ if IS_LOCAL or ENDPOINT != "":
 INCIDENTS_TABLE = os.environ.get("INCIDENTS_TABLE", "sentinel-incidents")
 PR_REVIEWS_TABLE = os.environ.get("PR_REVIEWS_TABLE", "sentinel-pr-reviews")
 VALIDATION_TABLE = os.environ.get("VALIDATION_RESULTS_TABLE", "sentinel-validation-results")
+
+KSERVE_ENDPOINT = os.environ.get("KSERVE_ENDPOINT", "http://localhost:8080")
+KSERVE_MODEL    = os.environ.get("KSERVE_MODEL",    "phi3:mini")
 
 # ── App ────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Sentinel Dashboard API", version="0.1.0")
@@ -83,6 +89,92 @@ def _serialise(item: dict) -> dict:
         else:
             out[k] = v
     return out
+
+
+# ── KServe / AI helpers ────────────────────────────────────────────────────
+
+_RCA_SYSTEM = (
+    "You are an expert SRE (Site Reliability Engineer). "
+    "You always respond with raw JSON only — no markdown, no explanation, no backticks. "
+    "Never add any text before or after the JSON object."
+)
+
+_RCA_PROMPT = """Incident details:
+- Service: {service}
+- Severity: {severity} (P1=full outage, P2=major degradation, P3=minor issue, P4=no user impact)
+
+Output a JSON object with exactly these keys:
+{{"root_cause":"one sentence technical root cause","runbook":{{"step1":"immediate action","step2":"stabilise service","step3":"rollback or investigate","step4":"confirm recovery"}},"degradation_trend":"worsening","affected_components":["{service}","database"],"summary":"one sentence stakeholder impact"}}"""
+
+
+def _call_kserve(service: str, severity: str) -> Optional[dict]:
+    """Call the local KServe bridge and parse the AI-generated RCA."""
+    prompt = _RCA_PROMPT.format(service=service, severity=severity)
+    try:
+        resp = _requests.post(
+            f"{KSERVE_ENDPOINT}/v1/models/{KSERVE_MODEL}:predict",
+            json={
+                "inputs": [{"name": "text_input", "shape": [1], "datatype": "BYTES", "data": [prompt]}],
+                "parameters": {
+                    "max_new_tokens": 500,
+                    "temperature": 0.1,
+                    "system": _RCA_SYSTEM,
+                },
+            },
+            timeout=120,
+        )
+        resp.raise_for_status()
+        raw = resp.json()["outputs"][0]["data"][0]
+        # Extract JSON even if the model adds surrounding text or markdown fences
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+def _update_incident_rca(incident_id: str, ai: dict, severity: str, service: str,
+                          rca_fallback: str, runbook_fallback: dict) -> None:
+    """Write AI-generated RCA back to DynamoDB (runs in background thread)."""
+    root_cause = ai.get("root_cause") or rca_fallback
+    runbook    = ai.get("runbook")    or runbook_fallback
+    trend      = ai.get("degradation_trend", "worsening" if severity in ("P1", "P2") else "stable")
+    components = ai.get("affected_components", [service])
+    summary    = ai.get("summary", root_cause[:120] + "…")
+
+    error_rate = Decimal("0.18") if severity == "P1" else Decimal("0.07") if severity == "P2" else Decimal("0.02")
+
+    try:
+        table = _dynamo().Table(INCIDENTS_TABLE)
+        table.update_item(
+            Key={"incident_id": incident_id},
+            UpdateExpression=(
+                "SET root_cause = :rc, runbook = :rb, "
+                "log_analysis = :la, impact_scope = :is, ai_generated = :ai"
+            ),
+            ExpressionAttributeValues={
+                ":rc": root_cause,
+                ":rb": runbook,
+                ":la": {
+                    "severity":             severity,
+                    "rule_severity":        severity,
+                    "ml_severity":          severity,
+                    "degradation_trend":    trend,
+                    "affected_components":  components,
+                    "log_sample_size":      250,
+                    "error_rate_in_sample": error_rate,
+                },
+                ":is": {
+                    "error_rate_in_sample": error_rate,
+                    "users_impacted_pct":   85 if severity == "P1" else 30 if severity == "P2" else 5,
+                    "summary":              summary,
+                },
+                ":ai": True,
+            },
+        )
+    except Exception:
+        pass
 
 
 # ── API endpoints ──────────────────────────────────────────────────────────
@@ -179,26 +271,33 @@ def list_validations(limit: int = 20):
 @app.post("/api/demo/fire")
 def fire_demo_incident(payload: dict):
     """
-    Fire a demo incident directly into DynamoDB so the dashboard shows it.
-    Body: { "severity": "P1"|"P2"|"P3", "service": "my-service" }
+    Fire a demo incident. Writes to DynamoDB immediately with a placeholder,
+    then calls KServe (Ollama) in a background thread to generate real AI RCA.
+    The dashboard auto-refreshes every 15 s and will show the AI content when ready.
+
+    Body: { "severity": "P1"|"P2"|"P3"|"P4", "service": "my-service" }
     """
     severity = payload.get("severity", "P2")
     service  = payload.get("service", "demo-service")
     iid      = str(uuid.uuid4())
     now      = datetime.now(timezone.utc).isoformat()
 
-    rca_map = {
-        "P1": "Database connection pool exhausted — all connections saturated under peak load. Primary cause: a missing index on the events table caused full-table scans that held locks for 30+ seconds, cascading into timeout failures across all downstream services.",
-        "P2": "Memory leak in the authentication token cache — LRU eviction not triggering correctly after a recent config change. Cache grew unchecked over 6 hours until the pod was OOM-killed. Three pod restarts observed before the leak was identified.",
-        "P3": "Upstream rate limiting from the payments API — 429s started after a batch job began sending requests without backoff. No user-visible failures yet but error budget is at 40%.",
-        "P4": "Elevated log volume from verbose debug logging accidentally left enabled after last Tuesday's hotfix. No performance impact, but CloudWatch costs will spike at month end.",
-    }
-    runbook_map = {
-        "P1": {"step1": "Scale out database read replicas immediately", "step2": "Kill long-running queries on primary", "step3": "Add missing index: CREATE INDEX CONCURRENTLY on events(user_id, created_at)", "step4": "Drain and restart connection pool", "step5": "Monitor p99 latency until below 200ms"},
-        "P2": {"step1": "Restart affected pods to clear cache", "step2": "Revert cache config to previous values", "step3": "Deploy fix for LRU eviction bug", "step4": "Add cache size monitoring alert"},
-        "P3": {"step1": "Throttle batch job to 10 req/s", "step2": "Implement exponential backoff with jitter", "step3": "Coordinate with payments team on rate limit increase"},
-        "P4": {"step1": "Set LOG_LEVEL=INFO in env config", "step2": "Redeploy affected services", "step3": "Add log-level validation to CI pipeline"},
-    }
+    # Fallback content used while AI is generating (or if KServe is unavailable)
+    rca_fallback = {
+        "P1": "Database connection pool exhausted — full-table scans on an un-indexed column held locks for 30+ seconds, cascading into timeout failures across all downstream services.",
+        "P2": "Memory leak in the token refresh cache — LRU eviction not triggering after a TTL config change. Cache grew from 200 MB to 1.8 GB over 6 hours until OOM-kill.",
+        "P3": "Upstream 429 rate-limiting — a batch job began sending requests without backoff and saturated the API's request quota.",
+        "P4": "Verbose DEBUG logging left enabled after a hotfix. No user impact, but log-ingestion costs will spike at month end.",
+    }.get(severity, "Root cause analysis in progress…")
+
+    runbook_fallback = {
+        "P1": {"step1": "Scale read replicas immediately", "step2": "Kill long-running queries on primary", "step3": "Add missing index (CREATE INDEX CONCURRENTLY)", "step4": "Drain and restart connection pool", "step5": "Monitor p99 until below 200 ms"},
+        "P2": {"step1": "Restart affected pods to clear cache", "step2": "Revert cache TTL to previous value", "step3": "Deploy LRU eviction fix", "step4": "Add memory usage alert"},
+        "P3": {"step1": "Throttle batch job to 10 req/s", "step2": "Add exponential backoff with jitter", "step3": "Coordinate rate-limit increase with upstream team"},
+        "P4": {"step1": "Set LOG_LEVEL=INFO in env config", "step2": "Rolling restart affected pods", "step3": "Add log-level lint to CI"},
+    }.get(severity, {})
+
+    error_rate = Decimal("0.18") if severity == "P1" else Decimal("0.07") if severity == "P2" else Decimal("0.02")
 
     item = {
         "incident_id":  iid,
@@ -206,23 +305,23 @@ def fire_demo_incident(payload: dict):
         "severity":     severity,
         "status":       "OPEN",
         "created_at":   now,
-        "root_cause":   rca_map.get(severity, ""),
-        "runbook":      runbook_map.get(severity, {}),
+        "root_cause":   "⏳ AI analysis in progress — check back in ~30 s…",
+        "runbook":      {},
         "log_analysis": {
-            "severity":            severity,
-            "rule_severity":       severity,
-            "ml_severity":        severity,
-            "degradation_trend":  "worsening" if severity in ("P1", "P2") else "stable",
-            "affected_components": [service, "database", "cache"] if severity == "P1" else [service],
-            "log_sample_size":    250,
-            "error_rate_in_sample": Decimal("0.18") if severity == "P1" else Decimal("0.07") if severity == "P2" else Decimal("0.02"),
+            "severity":             severity,
+            "rule_severity":        severity,
+            "ml_severity":          severity,
+            "degradation_trend":    "worsening" if severity in ("P1", "P2") else "stable",
+            "affected_components":  [service],
+            "log_sample_size":      250,
+            "error_rate_in_sample": error_rate,
         },
         "impact_scope": {
-            "error_rate_in_sample": Decimal("0.18") if severity == "P1" else Decimal("0.07") if severity == "P2" else Decimal("0.02"),
-            "users_impacted_pct":  85 if severity == "P1" else 30 if severity == "P2" else 5,
-            "summary":             rca_map.get(severity, "")[:120] + "…",
+            "error_rate_in_sample": error_rate,
+            "users_impacted_pct":   85 if severity == "P1" else 30 if severity == "P2" else 5,
+            "summary":              "Analysis in progress…",
         },
-        "metadata": {"source": "demo", "fired_at": now},
+        "metadata": {"source": "demo", "fired_at": now, "ai_pending": True},
     }
 
     try:
@@ -230,7 +329,14 @@ def fire_demo_incident(payload: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DynamoDB error: {e}")
 
-    return {"incident_id": iid, "severity": severity, "service": service}
+    # Fire AI generation in background — updates DynamoDB when Ollama responds
+    def _bg():
+        ai = _call_kserve(service, severity)
+        _update_incident_rca(iid, ai or {}, severity, service, rca_fallback, runbook_fallback)
+
+    threading.Thread(target=_bg, daemon=True).start()
+
+    return {"incident_id": iid, "severity": severity, "service": service, "ai_pending": True}
 
 
 @app.post("/api/incidents/{incident_id}/resolve")
