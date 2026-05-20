@@ -80,10 +80,10 @@ def _err(msg):
 def create_kinesis_streams():
     print("\n── Kinesis streams ──────────────────────────────")
     client = boto3.client("kinesis", **DUMMY_CREDS)
-    existing = {s["StreamName"] for s in client.list_streams()["StreamNames"] if isinstance(s, str)}
-    # Floci returns stream names directly
     try:
-        existing = set(client.list_streams()["StreamNames"])
+        raw = client.list_streams().get("StreamNames", [])
+        # StreamNames is a list of name strings in both LocalStack and Floci
+        existing = {s if isinstance(s, str) else s["StreamName"] for s in raw}
     except Exception:
         existing = set()
 
