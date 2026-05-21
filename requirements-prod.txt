@@ -1,0 +1,6 @@
+requests>=2.31
+pyyaml>=6.0
+click>=8.1
+boto3>=1.34
+fastapi>=0.104
+uvicorn>=0.24
