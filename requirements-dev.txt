@@ -1,0 +1,17 @@
+-r requirements.txt
+
+# Testing
+pytest>=7.4
+pytest-mock>=3.12
+pytest-cov>=4.1
+
+# Linting & formatting
+ruff>=0.1
+mypy>=1.5
+isort>=5.12
+flake8>=6.1
+
+# Local dashboard dev
+uvicorn>=0.24
+fastapi>=0.104
+boto3-stubs[kinesis,dynamodb,sqs]>=1.34
