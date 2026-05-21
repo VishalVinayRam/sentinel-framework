@@ -33,7 +33,7 @@ FLOCI_ENDPOINT="http://localhost:4566"
 AWS_REGION="us-east-1"
 DASHBOARD_PORT=8501
 KSERVE_PORT=8080
-OLLAMA_MODEL="${SENTINEL_OLLAMA_MODEL:-phi3:mini}"   # override: SENTINEL_OLLAMA_MODEL=tinyllama ./setup_demo.sh
+OLLAMA_MODEL="${SENTINEL_OLLAMA_MODEL:-llama3.2:1b}"  # override: SENTINEL_OLLAMA_MODEL=phi3:mini ./setup_demo.sh
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 export FLOCI_ENDPOINT AWS_REGION
@@ -165,7 +165,7 @@ if command -v ollama &>/dev/null; then
 
     # Pick the best available instruction-following model.
     # Coding models (deepseek-coder, codellama, starcoder) won't follow JSON prompts.
-    PREFERRED_MODELS="phi3:mini phi3 llama3.2:3b llama3.2:1b llama3 mistral:7b mistral gemma2:2b gemma:2b qwen2:7b qwen2:1.5b"
+    PREFERRED_MODELS="phi3:mini phi3 llama3.2:1b llama3.2:3b llama3 mistral:7b mistral gemma2:2b gemma:2b qwen2:7b qwen2:1.5b"
     AVAILABLE_MODELS=$(ollama list 2>/dev/null | tail -n +2 | awk '{print $1}')
 
     if [ -n "$AVAILABLE_MODELS" ]; then
@@ -182,10 +182,10 @@ if command -v ollama &>/dev/null; then
 
     # If nothing suitable is installed, pull phi3:mini
     if ! echo "$AVAILABLE_MODELS" | grep -qE "^(phi3|llama3|mistral|gemma|qwen2)[^-]"; then
-      info "No general-purpose instruction model found. Pulling phi3:mini (~2.3 GB)…"
-      if ollama pull phi3:mini; then
-        OLLAMA_MODEL="phi3:mini"
-        ok "phi3:mini pulled successfully"
+      info "No general-purpose instruction model found. Pulling llama3.2:1b (~1.3 GB)…"
+      if ollama pull llama3.2:1b; then
+        OLLAMA_MODEL="llama3.2:1b"
+        ok "llama3.2:1b pulled successfully"
       else
         warn "Model pull failed — AI will use fallback RCA text"
         OLLAMA_MODEL=""

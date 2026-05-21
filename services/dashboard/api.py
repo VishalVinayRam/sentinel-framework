@@ -99,16 +99,19 @@ _RCA_SYSTEM = (
     "Never add any text before or after the JSON object."
 )
 
-_RCA_PROMPT = """Incident details:
-- Service: {service}
-- Severity: {severity} (P1=full outage, P2=major degradation, P3=minor issue, P4=no user impact)
+_RCA_PROMPT = """A production incident fired. Fill in the JSON below with plain English strings only (no nested JSON, no quotes inside values).
 
-Output a JSON object with exactly these keys:
-{{"root_cause":"one sentence technical root cause","runbook":{{"step1":"immediate action","step2":"stabilise service","step3":"rollback or investigate","step4":"confirm recovery"}},"degradation_trend":"worsening","affected_components":["{service}","database"],"summary":"one sentence stakeholder impact"}}"""
+Service: {service}
+Severity: {severity}
+
+Fill this template:
+{{"root_cause":"<one plain English sentence explaining the technical root cause>","runbook":{{"step1":"<first immediate action>","step2":"<stabilise the service>","step3":"<rollback or dig deeper>","step4":"<confirm recovery>"}},"degradation_trend":"worsening","affected_components":["{service}","database"],"summary":"<one sentence stakeholder impact>"}}"""
 
 
 def _call_kserve(service: str, severity: str) -> Optional[dict]:
-    """Call the local KServe bridge and parse the AI-generated RCA."""
+    """Call the local KServe bridge and parse the AI-generated RCA.
+    Returns a dict with at minimum a 'root_cause' key, or None on failure.
+    """
     prompt = _RCA_PROMPT.format(service=service, severity=severity)
     try:
         resp = _requests.post(
@@ -116,7 +119,7 @@ def _call_kserve(service: str, severity: str) -> Optional[dict]:
             json={
                 "inputs": [{"name": "text_input", "shape": [1], "datatype": "BYTES", "data": [prompt]}],
                 "parameters": {
-                    "max_new_tokens": 500,
+                    "max_new_tokens": 800,
                     "temperature": 0.1,
                     "system": _RCA_SYSTEM,
                 },
@@ -127,21 +130,33 @@ def _call_kserve(service: str, severity: str) -> Optional[dict]:
         raw = resp.json()["outputs"][0]["data"][0]
         # Extract JSON even if the model adds surrounding text or markdown fences
         match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if match:
-            return json.loads(match.group())
-        return json.loads(raw)
+        candidate = match.group() if match else raw
+        parsed = json.loads(candidate)
+        # Only accept it if the model actually filled in a root_cause
+        if parsed.get("root_cause") and len(str(parsed["root_cause"])) > 10:
+            return parsed
+        return None
     except Exception:
         return None
 
 
-def _update_incident_rca(incident_id: str, ai: dict, severity: str, service: str,
+def _update_incident_rca(incident_id: str, ai: Optional[dict], severity: str, service: str,
                           rca_fallback: str, runbook_fallback: dict) -> None:
-    """Write AI-generated RCA back to DynamoDB (runs in background thread)."""
-    root_cause = ai.get("root_cause") or rca_fallback
-    runbook    = ai.get("runbook")    or runbook_fallback
-    trend      = ai.get("degradation_trend", "worsening" if severity in ("P1", "P2") else "stable")
-    components = ai.get("affected_components", [service])
-    summary    = ai.get("summary", root_cause[:120] + "…")
+    """Write RCA back to DynamoDB and clear the ai_pending flag.
+
+    ai=None means KServe was unreachable — uses fallback text and marks ai_generated=False.
+    ai=dict means the model returned usable content — marks ai_generated=True.
+    """
+    used_ai    = ai is not None
+    root_cause = ai.get("root_cause") if used_ai else rca_fallback
+    runbook    = ai.get("runbook")    if used_ai else runbook_fallback
+    trend      = (ai or {}).get("degradation_trend", "worsening" if severity in ("P1", "P2") else "stable")
+    components = (ai or {}).get("affected_components", [service])
+    summary    = (ai or {}).get("summary", (root_cause or "")[:120] + "…")
+
+    # Ensure fallbacks fill any missing fields
+    root_cause = root_cause or rca_fallback
+    runbook    = runbook    or runbook_fallback
 
     error_rate = Decimal("0.18") if severity == "P1" else Decimal("0.07") if severity == "P2" else Decimal("0.02")
 
@@ -151,11 +166,14 @@ def _update_incident_rca(incident_id: str, ai: dict, severity: str, service: str
             Key={"incident_id": incident_id},
             UpdateExpression=(
                 "SET root_cause = :rc, runbook = :rb, "
-                "log_analysis = :la, impact_scope = :is, ai_generated = :ai"
+                "log_analysis = :la, impact_scope = :is, "
+                "ai_generated = :ai, rca_source = :src, "
+                "#meta.ai_pending = :pending"
             ),
+            ExpressionAttributeNames={"#meta": "metadata"},
             ExpressionAttributeValues={
-                ":rc": root_cause,
-                ":rb": runbook,
+                ":rc":      root_cause,
+                ":rb":      runbook,
                 ":la": {
                     "severity":             severity,
                     "rule_severity":        severity,
@@ -170,11 +188,15 @@ def _update_incident_rca(incident_id: str, ai: dict, severity: str, service: str
                     "users_impacted_pct":   85 if severity == "P1" else 30 if severity == "P2" else 5,
                     "summary":              summary,
                 },
-                ":ai": True,
+                ":ai":      used_ai,
+                ":src":     "kserve-ollama" if used_ai else "fallback",
+                ":pending": False,
             },
         )
-    except Exception:
-        pass
+    except Exception as e:
+        # Log to stderr so it appears in uvicorn output for debugging
+        import sys
+        print(f"[rca-update] DynamoDB update failed for {incident_id}: {e}", file=sys.stderr)
 
 
 # ── API endpoints ──────────────────────────────────────────────────────────
@@ -331,8 +353,15 @@ def fire_demo_incident(payload: dict):
 
     # Fire AI generation in background — updates DynamoDB when Ollama responds
     def _bg():
+        import sys
+        print(f"[rca-bg] calling KServe at {KSERVE_ENDPOINT} for {iid} ({severity}/{service})", file=sys.stderr)
         ai = _call_kserve(service, severity)
-        _update_incident_rca(iid, ai or {}, severity, service, rca_fallback, runbook_fallback)
+        if ai:
+            print(f"[rca-bg] AI returned root_cause: {str(ai.get('root_cause',''))[:80]}", file=sys.stderr)
+        else:
+            print(f"[rca-bg] KServe returned None — using fallback text", file=sys.stderr)
+        _update_incident_rca(iid, ai, severity, service, rca_fallback, runbook_fallback)
+        print(f"[rca-bg] DynamoDB updated for {iid} (ai_generated={ai is not None})", file=sys.stderr)
 
     threading.Thread(target=_bg, daemon=True).start()
 
@@ -368,3 +397,19 @@ def serve_ui():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/kserve/health")
+def kserve_health():
+    """Check whether the local KServe bridge + Ollama are reachable."""
+    try:
+        resp = _requests.get(f"{KSERVE_ENDPOINT}/v2/health/ready", timeout=3)
+        bridge_ok = resp.status_code == 200
+    except Exception:
+        bridge_ok = False
+    return {
+        "bridge_url":  KSERVE_ENDPOINT,
+        "model":       KSERVE_MODEL,
+        "bridge_up":   bridge_ok,
+        "ai_enabled":  bridge_ok,
+    }
