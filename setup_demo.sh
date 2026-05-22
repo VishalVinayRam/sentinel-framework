@@ -32,7 +32,7 @@ step() { echo -e "\n${BOLD}${CYAN}── $* ${RESET}"; }
 FLOCI_ENDPOINT="http://localhost:4566"
 AWS_REGION="us-east-1"
 DASHBOARD_PORT=8501
-KSERVE_PORT=8080
+KSERVE_PORT=8081
 OLLAMA_MODEL="${SENTINEL_OLLAMA_MODEL:-llama3.2:1b}"  # override: SENTINEL_OLLAMA_MODEL=phi3:mini ./setup_demo.sh
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 

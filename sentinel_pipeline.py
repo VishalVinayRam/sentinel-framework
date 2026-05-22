@@ -41,7 +41,7 @@ os.environ.setdefault("AWS_SECRET_ACCESS_KEY",      "test")
 os.environ.setdefault("INCIDENTS_TABLE",            "sentinel-incidents")
 os.environ.setdefault("VALIDATION_RESULTS_TABLE",   "sentinel-validation-results")
 os.environ.setdefault("EVENTS_STREAM",              "sentinel-events")
-os.environ.setdefault("KSERVE_ENDPOINT",            "http://localhost:8080")
+os.environ.setdefault("KSERVE_ENDPOINT",            "http://localhost:8081")
 os.environ.setdefault("KSERVE_MODEL",               "llama3.2:1b")
 os.environ.setdefault("GITHUB_TOKEN",               "demo-token")
 os.environ.setdefault("GITHUB_REPO",                "demo-org/demo-repo")
@@ -150,22 +150,36 @@ def _log(msg: str, color: str = ""):
 # ── Context gathering ─────────────────────────────────────────────────────────
 
 def _gather_context(service: str) -> tuple[str, str]:
-    """Return (recent_error_logs, source_code) for the given service."""
-    # -- logs --
+    """Return (recent_error_logs, fault_relevant_source).
+
+    Keeps both sections short so a 1B model can process the prompt within the
+    KServe timeout on CPU. Only fault-related functions are extracted from source.
+    """
+    # -- logs: last 20 error lines only --
     log_path = _SERVICE_LOG.get(service)
     log_excerpt = ""
     if log_path and Path(log_path).exists():
         lines = Path(log_path).read_text(errors="replace").splitlines()
-        # keep log-shipper lines and HTTP error responses; skip Flask meta-warnings
         error_keywords = ("[ERROR]", "[WARN]", "[FATAL]", "CHAOS INJECTED", '" 500 ', '" 502 ', '" 503 ')
         relevant = [l for l in lines if any(k in l for k in error_keywords)]
-        log_excerpt = "\n".join(relevant[-40:])  # cap at last 40 error lines
+        log_excerpt = "\n".join(relevant[-20:])
 
-    # -- source --
+    # -- source: extract only the two functions that control failure behaviour --
+    # We extract _chaos state dict + _apply_chaos() + health() by finding each
+    # function start and taking the next 20 lines. This keeps the prompt short
+    # enough for a 1B model to process on CPU within the timeout.
     src_path = _SERVICE_SRC.get(service)
     source = ""
     if src_path and src_path.exists():
-        source = src_path.read_text(errors="replace")
+        all_lines = src_path.read_text(errors="replace").splitlines()
+        targets = ("_chaos = {", "def _apply_chaos", "def health(", "def set_fault(")
+        kept: list[int] = []
+        for i, line in enumerate(all_lines):
+            if any(line.strip().startswith(t) or t in line for t in targets):
+                kept.extend(range(i, min(i + 20, len(all_lines))))
+        seen: set[int] = set()
+        unique = [i for i in kept if not (i in seen or seen.add(i))]  # type: ignore[func-returns-value]
+        source = "\n".join(all_lines[i] for i in unique)
 
     return log_excerpt, source
 
@@ -218,7 +232,7 @@ def _trigger_ai_rca(incident_id: str, service: str, severity: str, alert: dict |
 
     try:
         _log(f"Calling KServe for RCA ({service}/{severity})…", B)
-        kserve = os.environ.get("KSERVE_ENDPOINT", "http://localhost:8080")
+        kserve = os.environ.get("KSERVE_ENDPOINT", "http://localhost:8081")
         model  = os.environ.get("KSERVE_MODEL", "llama3.2:1b")
 
         system = (
@@ -259,8 +273,8 @@ Respond with JSON only — no extra text:
         resp = requests.post(
             f"{kserve}/v1/models/{model}:predict",
             json={"inputs": [{"name": "text_input", "shape": [1], "datatype": "BYTES", "data": [prompt]}],
-                  "parameters": {"max_new_tokens": 900, "temperature": 0.1, "system": system}},
-            timeout=120,
+                  "parameters": {"max_new_tokens": 350, "temperature": 0.1, "system": system}},
+            timeout=200,
         )
         if resp.ok:
             raw = resp.json()["outputs"][0]["data"][0]

@@ -117,7 +117,8 @@ step "Starting Sentinel pipeline runner"
 pkill -f sentinel_pipeline.py &>/dev/null || true
 sleep 0.3
 
-python3 sentinel_pipeline.py &>/tmp/sentinel-pipeline.log &
+KSERVE_ENDPOINT="http://localhost:8081" KSERVE_MODEL="llama3.2:1b" \
+  python3 sentinel_pipeline.py &>/tmp/sentinel-pipeline.log &
 PIPELINE_PID=$!
 sleep 2
 ok "Pipeline runner started (PID $PIPELINE_PID)"
