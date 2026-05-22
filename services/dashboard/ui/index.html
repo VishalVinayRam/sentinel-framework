@@ -380,6 +380,17 @@ async function loadDetail(id) {
   const runbook = inc.runbook ?? {};
   const runbookSteps = Object.entries(runbook).map(([k,v]) => `<li class="flex gap-2"><span class="text-violet-400">→</span><span>${v}</span></li>`).join('');
   const components = (logs.affected_components ?? []).join(', ') || '—';
+  const ctxBadge = inc.context_used === 'logs+source'
+    ? '<span class="text-[10px] bg-emerald-900/60 text-emerald-300 rounded px-1.5 py-0.5">logs + source</span>'
+    : inc.context_used === 'metadata-only'
+    ? '<span class="text-[10px] bg-yellow-900/60 text-yellow-300 rounded px-1.5 py-0.5">metadata only</span>'
+    : '';
+  const srcBadge = inc.rca_source === 'kserve-ollama'
+    ? '<span class="text-[10px] bg-violet-900/60 text-violet-300 rounded px-1.5 py-0.5">AI · kserve-ollama</span>'
+    : inc.rca_source === 'fallback'
+    ? '<span class="text-[10px] bg-slate-700 text-slate-400 rounded px-1.5 py-0.5">fallback text</span>'
+    : '';
+  const logExcerpt = logs.error_log_excerpt ?? '';
 
   panel.innerHTML = `
   <div class="p-6 space-y-5 fade-in">
@@ -399,18 +410,29 @@ async function loadDetail(id) {
 
     <!-- RCA -->
     <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-      <h3 class="text-xs font-semibold text-violet-400 uppercase tracking-wider mb-2">🔍 Root Cause Analysis</h3>
-      <p class="text-sm text-slate-200 leading-relaxed">${inc.root_cause || '<span class="text-slate-500">RCA not yet available — Step Functions pipeline still running</span>'}</p>
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-xs font-semibold text-violet-400 uppercase tracking-wider">🔍 Root Cause Analysis</h3>
+        <div class="flex gap-1.5">${srcBadge}${ctxBadge}</div>
+      </div>
+      <p class="text-sm text-slate-200 leading-relaxed">${inc.root_cause || '<span class="text-slate-500">RCA not yet available — pipeline still running</span>'}</p>
+      ${inc.failed_function ? `<div class="mt-3 pt-3 border-t border-slate-700"><p class="text-xs text-slate-500">Failed function</p><p class="font-mono text-sm text-rose-300 mt-0.5">${inc.failed_function}()</p></div>` : ''}
     </div>
 
-    <!-- Log Analysis -->
+    <!-- Log Evidence used by AI -->
+    ${logExcerpt ? `<div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
+      <h3 class="text-xs font-semibold text-yellow-400 uppercase tracking-wider mb-2">🪵 Log Evidence (fed to AI)</h3>
+      <pre class="text-[11px] text-slate-400 font-mono leading-relaxed whitespace-pre-wrap overflow-auto max-h-48 bg-slate-900 rounded p-3">${logExcerpt.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+      <p class="text-[10px] text-slate-600 mt-1">${logs.log_sample_size ?? 0} error lines captured · AI used last 500 chars</p>
+    </div>` : ''}
+
+    <!-- Log Analysis metadata -->
     <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
       <h3 class="text-xs font-semibold text-yellow-400 uppercase tracking-wider mb-3">📊 Log Analysis</h3>
       <div class="grid grid-cols-2 gap-3 text-xs">
         <div><p class="text-slate-500">Rule-based severity</p><p class="font-bold text-white mt-0.5">${logs.rule_severity ?? '—'}</p></div>
         <div><p class="text-slate-500">ML severity</p><p class="font-bold text-white mt-0.5">${logs.ml_severity ?? '—'}</p></div>
         <div><p class="text-slate-500">Trend</p><p class="font-bold text-white mt-0.5 capitalize">${logs.degradation_trend ?? '—'}</p></div>
-        <div><p class="text-slate-500">Log sample size</p><p class="font-bold text-white mt-0.5">${logs.log_sample_size ?? '—'} lines</p></div>
+        <div><p class="text-slate-500">Error lines sampled</p><p class="font-bold text-white mt-0.5">${logs.log_sample_size ?? '—'}</p></div>
         <div class="col-span-2"><p class="text-slate-500">Affected components</p><p class="font-mono text-violet-300 mt-0.5">${components}</p></div>
       </div>
     </div>
