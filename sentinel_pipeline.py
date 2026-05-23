@@ -61,13 +61,25 @@ os.environ["EVENTS_QUEUE_URL"]           = _CONF_Q
 # Kinesis shard iterator cache: {stream: iterator}
 _iterators: dict[str, str] = {}
 
-# Maps service name → where its log file and source code live
+# Log file location per service — overridable at startup via env
+# Format: SERVICE_LOG_<NAME>=path  e.g. SERVICE_LOG_AUTH_SERVICE=/var/log/auth.log
 _SERVICE_LOG: dict[str, str] = {
-    "auth-service":     "/tmp/auth-service.log",
-    "payments-service": "/tmp/payments-service.log",
-    "search-api":       "/tmp/search-api.log",
+    "auth-service":     os.environ.get("SERVICE_LOG_AUTH_SERVICE",     "/tmp/auth-service.log"),
+    "payments-service": os.environ.get("SERVICE_LOG_PAYMENTS_SERVICE", "/tmp/payments-service.log"),
+    "search-api":       os.environ.get("SERVICE_LOG_SEARCH_API",       "/tmp/search-api.log"),
 }
-_SERVICE_SRC: dict[str, Path] = {
+
+# GitHub source config — set these env vars to point at your real repo
+# GITHUB_REPO   = "owner/repo"  (required for GitHub fetch)
+# GITHUB_TOKEN  = "ghp_..."     (optional for public repos, required for private)
+# GITHUB_BRANCH = "main"        (default: main)
+_GITHUB_REPO   = os.environ.get("GITHUB_REPO",   "")
+_GITHUB_TOKEN  = os.environ.get("GITHUB_TOKEN",  "")
+_GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
+
+# Local fallback map — only used when GITHUB_REPO is not set.
+# Maps service name → local file path relative to ROOT.
+_LOCAL_SRC_FALLBACK: dict[str, Path] = {
     "auth-service":     ROOT / "target/services/auth/app.py",
     "payments-service": ROOT / "target/services/payments/app.py",
     "search-api":       ROOT / "target/services/search/app.py",
@@ -149,13 +161,136 @@ def _log(msg: str, color: str = ""):
 
 # ── Context gathering ─────────────────────────────────────────────────────────
 
+def _fetch_github_source(service: str) -> tuple[str, str]:
+    """Search a GitHub repo for source files belonging to this service and return
+    (raw_source, file_path).  Returns ('', '') if nothing is found or GitHub is
+    not configured.
+
+    Strategy:
+    1. Walk the repo tree via GitHub API (cached for 60 s per repo/branch).
+    2. Score every file by how closely its path matches the service name.
+    3. Fetch the top-scoring file and return its decoded content.
+    """
+    if not _GITHUB_REPO:
+        return "", ""
+
+    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    if _GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {_GITHUB_TOKEN}"
+
+    api = "https://api.github.com"
+
+    # -- resolve branch → commit SHA so we can cache the tree --
+    try:
+        branch_url = f"{api}/repos/{_GITHUB_REPO}/branches/{_GITHUB_BRANCH}"
+        sha = requests.get(branch_url, headers=headers, timeout=10).json()["commit"]["sha"]
+    except Exception as e:
+        _log(f"GitHub branch lookup failed: {e}", Y)
+        return "", ""
+
+    # -- fetch the full tree (recursive) --
+    try:
+        tree_url = f"{api}/repos/{_GITHUB_REPO}/git/trees/{sha}?recursive=1"
+        tree = requests.get(tree_url, headers=headers, timeout=15).json().get("tree", [])
+    except Exception as e:
+        _log(f"GitHub tree fetch failed: {e}", Y)
+        return "", ""
+
+    # -- score every blob (file) against the service name --
+    # Normalise service name: "auth-service" → {"auth", "service"}
+    svc_tokens = set(service.lower().replace("-", " ").replace("_", " ").split())
+    # file extensions we care about
+    src_exts = {".py", ".js", ".ts", ".go", ".java", ".rb", ".rs", ".cs"}
+
+    def _score(path: str) -> int:
+        p = path.lower()
+        if not any(p.endswith(ext) for ext in src_exts):
+            return 0
+        # Skip test files, migrations, generated code
+        if any(x in p for x in ("/test", "_test", ".test.", "migration", "generated", "vendor", "node_modules")):
+            return 0
+        score = 0
+        for tok in svc_tokens:
+            if tok in p:
+                score += 10
+        # Prefer shorter paths (closer to the service root), prefer main entry points
+        score -= len(path.split("/")) * 2
+        for name in ("app", "main", "server", "handler", "service", "index"):
+            if path.lower().split("/")[-1].startswith(name):
+                score += 5
+        return score
+
+    candidates = [(blob["path"], _score(blob["path"]))
+                  for blob in tree if blob.get("type") == "blob"]
+    candidates.sort(key=lambda x: -x[1])
+
+    # Take up to the top 2 files with a positive score
+    top = [(p, s) for p, s in candidates[:5] if s > 0][:2]
+    if not top:
+        _log(f"GitHub: no source files matched for '{service}' in {_GITHUB_REPO}", Y)
+        return "", ""
+
+    # -- fetch file content --
+    combined = []
+    fetched_paths = []
+    for file_path, score in top:
+        try:
+            content_url = f"{api}/repos/{_GITHUB_REPO}/contents/{file_path}?ref={_GITHUB_BRANCH}"
+            resp = requests.get(content_url, headers=headers, timeout=10).json()
+            import base64 as _b64
+            raw = _b64.b64decode(resp["content"]).decode(errors="replace")
+            combined.append(f"# --- {file_path} ---\n{raw}")
+            fetched_paths.append(file_path)
+        except Exception as e:
+            _log(f"GitHub: could not fetch {file_path}: {e}", Y)
+
+    if not combined:
+        return "", ""
+
+    _log(f"GitHub: fetched {fetched_paths}", G)
+    return "\n\n".join(combined), ", ".join(fetched_paths)
+
+
+def _extract_fault_section(raw_source: str) -> str:
+    """From a raw source file, extract only the lines most likely to explain a
+    failure — error handlers, health checks, fault injection code.  Keeps the
+    prompt short enough for a small model to process quickly."""
+    lines = raw_source.splitlines()
+    # Keywords that mark fault-relevant lines
+    fault_markers = (
+        "error", "Error", "ERROR",
+        "exception", "Exception",
+        "fail", "Fail",
+        "health", "Health",
+        "fault", "Fault",
+        "status", "Status",
+        "500", "503", "502",
+        "retry", "timeout", "Timeout",
+        "raise ", "panic(", "log.Fatal", "log.Error",
+    )
+    kept: list[int] = []
+    for i, line in enumerate(lines):
+        if any(m in line for m in fault_markers):
+            # include a window of context around each match
+            kept.extend(range(max(0, i - 2), min(i + 8, len(lines))))
+    seen: set[int] = set()
+    unique = [i for i in kept if not (i in seen or seen.add(i))]  # type: ignore[func-returns-value]
+    result = "\n".join(lines[i] for i in unique)
+    # Hard cap: 80 lines / ~3000 chars so the prompt stays fast
+    capped = "\n".join(result.splitlines()[:80])
+    return capped
+
+
 def _gather_context(service: str) -> tuple[str, str]:
     """Return (recent_error_logs, fault_relevant_source).
 
-    Keeps both sections short so a 1B model can process the prompt within the
-    KServe timeout on CPU. Only fault-related functions are extracted from source.
+    Source priority:
+      1. GitHub repo (if GITHUB_REPO env var is set)
+      2. Local file fallback (for the built-in demo services)
+    Both paths then run _extract_fault_section() to trim the source before
+    passing it to the LLM.
     """
-    # -- logs: last 20 error lines only --
+    # -- logs: last 20 error lines --
     log_path = _SERVICE_LOG.get(service)
     log_excerpt = ""
     if log_path and Path(log_path).exists():
@@ -164,22 +299,23 @@ def _gather_context(service: str) -> tuple[str, str]:
         relevant = [l for l in lines if any(k in l for k in error_keywords)]
         log_excerpt = "\n".join(relevant[-20:])
 
-    # -- source: extract only the two functions that control failure behaviour --
-    # We extract _chaos state dict + _apply_chaos() + health() by finding each
-    # function start and taking the next 20 lines. This keeps the prompt short
-    # enough for a 1B model to process on CPU within the timeout.
-    src_path = _SERVICE_SRC.get(service)
-    source = ""
-    if src_path and src_path.exists():
-        all_lines = src_path.read_text(errors="replace").splitlines()
-        targets = ("_chaos = {", "def _apply_chaos", "def health(", "def set_fault(")
-        kept: list[int] = []
-        for i, line in enumerate(all_lines):
-            if any(line.strip().startswith(t) or t in line for t in targets):
-                kept.extend(range(i, min(i + 20, len(all_lines))))
-        seen: set[int] = set()
-        unique = [i for i in kept if not (i in seen or seen.add(i))]  # type: ignore[func-returns-value]
-        source = "\n".join(all_lines[i] for i in unique)
+    # -- source: GitHub first, local fallback --
+    raw_source = ""
+    src_label = ""
+
+    if _GITHUB_REPO:
+        raw_source, src_label = _fetch_github_source(service)
+
+    if not raw_source:
+        # Fall back to the local demo files
+        local = _LOCAL_SRC_FALLBACK.get(service)
+        if local and local.exists():
+            raw_source = local.read_text(errors="replace")
+            src_label = str(local.relative_to(ROOT))
+
+    source = _extract_fault_section(raw_source) if raw_source else ""
+    if source:
+        _log(f"Source context: {len(source.splitlines())} lines from {src_label or 'local'}", B)
 
     return log_excerpt, source
 
@@ -252,8 +388,9 @@ def _trigger_ai_rca(incident_id: str, service: str, severity: str, alert: dict |
             evidence_parts.append(f"Alert desc:  {alert['description']}")
         incident_block = "\n".join(evidence_parts)
 
-        logs_block = log_excerpt if log_excerpt else "(no error logs captured)"
-        source_block = source_code if source_code else "(source not available)"
+        logs_block   = log_excerpt   if log_excerpt   else "(no error logs captured)"
+        source_label = f"from {_GITHUB_REPO}" if _GITHUB_REPO and source_code else "local file"
+        source_block = source_code   if source_code   else "(source not available)"
 
         prompt = f"""A production incident is firing. Use the evidence below to identify the root cause.
 
@@ -263,7 +400,7 @@ def _trigger_ai_rca(incident_id: str, service: str, severity: str, alert: dict |
 == RECENT ERROR LOGS ==
 {logs_block}
 
-== SERVICE SOURCE CODE (app.py) ==
+== SERVICE SOURCE CODE ({source_label}) ==
 {source_block}
 
 Based on the logs and source code above, identify exactly which function and code path is failing.
