@@ -161,6 +161,65 @@ def _log(msg: str, color: str = ""):
 
 # ── Context gathering ─────────────────────────────────────────────────────────
 
+def _query_code_index(service: str, description: str, log_excerpt: str) -> str:
+    """Query the pre-built ChromaDB vector index for code chunks relevant to this incident.
+
+    Returns a formatted string of the top matching chunks, ready to paste into the LLM
+    prompt.  Returns '' if no index exists or the query fails (falls through to GitHub).
+    """
+    index_dir = os.environ.get("SENTINEL_INDEX_DIR", ".sentinel-index")
+    if not Path(index_dir).exists():
+        return ""
+
+    try:
+        import chromadb
+    except ImportError:
+        return ""
+
+    try:
+        client = chromadb.PersistentClient(path=index_dir)
+        collection = client.get_collection("sentinel-code")
+        if collection.count() == 0:
+            return ""
+
+        # Embed a query that combines service context + recent error signals
+        ollama_url  = os.environ.get("OLLAMA_URL",  "http://localhost:11434")
+        embed_model = os.environ.get("EMBED_MODEL", "nomic-embed-text")
+        query_text  = f"service: {service}\nerror: {description}\n{log_excerpt[:400]}"
+
+        resp = requests.post(
+            f"{ollama_url}/api/embeddings",
+            json={"model": embed_model, "prompt": query_text},
+            timeout=30,
+        )
+        query_vec = resp.json()["embedding"]
+
+        results = collection.query(
+            query_embeddings=[query_vec],
+            n_results=3,
+            include=["documents", "metadatas", "distances"],
+        )
+
+        chunks = []
+        for doc, meta, dist in zip(
+            results["documents"][0],
+            results["metadatas"][0],
+            results["distances"][0],
+        ):
+            similarity = round(1 - dist, 2)
+            chunks.append(f"# {meta.get('file_path','?')} "
+                          f"(lines {meta.get('start_line','?')}–{meta.get('end_line','?')}, "
+                          f"similarity={similarity})\n{doc}")
+
+        _log(f"Code index: {len(chunks)} chunks retrieved (top similarity "
+             f"{round(1 - results['distances'][0][0], 2)})", G)
+        return "\n\n---\n\n".join(chunks)
+
+    except Exception as e:
+        _log(f"Code index query failed: {e}", Y)
+        return ""
+
+
 def _fetch_github_source(service: str) -> tuple[str, str]:
     """Search a GitHub repo for source files belonging to this service and return
     (raw_source, file_path).  Returns ('', '') if nothing is found or GitHub is
@@ -281,15 +340,16 @@ def _extract_fault_section(raw_source: str) -> str:
     return capped
 
 
-def _gather_context(service: str) -> tuple[str, str]:
+def _gather_context(service: str, alert: dict | None = None) -> tuple[str, str]:
     """Return (recent_error_logs, fault_relevant_source).
 
     Source priority:
-      1. GitHub repo (if GITHUB_REPO env var is set)
-      2. Local file fallback (for the built-in demo services)
-    Both paths then run _extract_fault_section() to trim the source before
-    passing it to the LLM.
+      1. Pre-built vector index  → sub-second, no network call (run index_codebase.py once)
+      2. GitHub API fetch        → set GITHUB_REPO env var, called once per incident
+      3. Local file fallback     → only works for the built-in demo services
     """
+    alert = alert or {}
+
     # -- logs: last 20 error lines --
     log_path = _SERVICE_LOG.get(service)
     log_excerpt = ""
@@ -299,23 +359,31 @@ def _gather_context(service: str) -> tuple[str, str]:
         relevant = [l for l in lines if any(k in l for k in error_keywords)]
         log_excerpt = "\n".join(relevant[-20:])
 
-    # -- source: GitHub first, local fallback --
-    raw_source = ""
-    src_label = ""
+    # -- source: index → GitHub → local --
+    source = ""
 
-    if _GITHUB_REPO:
+    # 1. Vector index (fast, no network after first build)
+    index_source = _query_code_index(
+        service,
+        alert.get("description", ""),
+        log_excerpt,
+    )
+    if index_source:
+        source = index_source
+
+    # 2. GitHub API fetch (one call per incident, no cloning)
+    elif _GITHUB_REPO:
         raw_source, src_label = _fetch_github_source(service)
+        if raw_source:
+            source = _extract_fault_section(raw_source)
+            _log(f"GitHub source: {len(source.splitlines())} lines from {src_label}", B)
 
-    if not raw_source:
-        # Fall back to the local demo files
+    # 3. Local demo files
+    if not source:
         local = _LOCAL_SRC_FALLBACK.get(service)
         if local and local.exists():
-            raw_source = local.read_text(errors="replace")
-            src_label = str(local.relative_to(ROOT))
-
-    source = _extract_fault_section(raw_source) if raw_source else ""
-    if source:
-        _log(f"Source context: {len(source.splitlines())} lines from {src_label or 'local'}", B)
+            source = _extract_fault_section(local.read_text(errors="replace"))
+            _log(f"Local source: {len(source.splitlines())} lines from {local.name}", B)
 
     return log_excerpt, source
 
@@ -358,10 +426,10 @@ def _trigger_ai_rca(incident_id: str, service: str, severity: str, alert: dict |
     alert = alert or {}
 
     # Gather evidence from the actual running service
-    log_excerpt, source_code = _gather_context(service)
+    log_excerpt, source_code = _gather_context(service, alert)
     has_context = bool(log_excerpt or source_code)
     if has_context:
-        _log(f"Context gathered: {len(log_excerpt.splitlines())} error log lines, "
+        _log(f"Context: {len(log_excerpt.splitlines())} error log lines, "
              f"{len(source_code.splitlines())} source lines", B)
     else:
         _log("No log/source context found — using metadata only", Y)
