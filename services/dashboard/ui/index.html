@@ -6,188 +6,541 @@
   <title>Sentinel — Incident Management</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
-          colors: {
-            brand: { 50:'#f5f3ff', 100:'#ede9fe', 500:'#8b5cf6', 600:'#7c3aed', 700:'#6d28d9', 800:'#5b21b6', 900:'#4c1d95' },
-            surface: { 0:'#0d0e14', 1:'#13151e', 2:'#1a1d28', 3:'#212435', border:'#2a2d3e' },
-          }
-        }
-      }
-    }
-  </script>
   <style>
-    *, *::before, *::after { box-sizing: border-box; }
-    body { font-family: 'Inter', system-ui, sans-serif; background: #0d0e14; color: #e2e4ef; margin: 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Design tokens (PagerDuty-aligned) ──────────────────────────────── */
+    :root {
+      --green:         #06AC38;
+      --green-dark:    #048a2d;
+      --green-light:   #e8f9ee;
+      --sidebar-bg:    #1b1c1d;
+      --sidebar-hover: rgba(255,255,255,.06);
+      --sidebar-active:rgba(255,255,255,.11);
+      --sidebar-text:  rgba(255,255,255,.6);
+      --sidebar-text-a:rgba(255,255,255,1);
+      --bg:            #f5f6f7;
+      --surface:       #ffffff;
+      --border:        #e1e3e5;
+      --border-light:  #f0f1f2;
+      --text-primary:  #1f2020;
+      --text-secondary:#57585a;
+      --text-muted:    #8b8d8f;
+      /* Severity */
+      --p1:            #d9212c;
+      --p1-bg:         #fff2f3;
+      --p1-border:     #f8b4b8;
+      --p2:            #e57200;
+      --p2-bg:         #fff8f0;
+      --p2-border:     #fdc07a;
+      --p3:            #b45309;
+      --p3-bg:         #fffdf0;
+      --p3-border:     #fcd579;
+      --p4:            #0369a1;
+      --p4-bg:         #eff6ff;
+      --p4-border:     #93c5fd;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      font-size: 13px;
+      line-height: 1.5;
+    }
 
     /* Scrollbar */
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #2a2d3e; border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #3a3e54; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 
-    /* Animations */
-    @keyframes fadeSlideIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
-    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
-    @keyframes spin { to { transform:rotate(360deg); } }
-    .fade-in { animation: fadeSlideIn .2s ease-out; }
-    .pulse-dot { animation: pulse 2s ease-in-out infinite; }
-    .spin { animation: spin .8s linear infinite; }
+    /* Layout */
+    .app { display: flex; height: 100vh; overflow: hidden; }
 
-    /* Severity */
-    .sev-P1 { background:#ef4444; color:#fff; }
-    .sev-P2 { background:#f97316; color:#fff; }
-    .sev-P3 { background:#eab308; color:#000; }
-    .sev-P4 { background:#22c55e; color:#fff; }
-    .dot-P1 { background:#ef4444; }
-    .dot-P2 { background:#f97316; }
-    .dot-P3 { background:#eab308; }
-    .dot-P4 { background:#22c55e; }
+    /* ── Sidebar ─────────────────────────────────────────────────────────── */
+    .sidebar {
+      width: 220px;
+      flex-shrink: 0;
+      background: var(--sidebar-bg);
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-logo {
+      padding: 16px 16px 14px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+    }
+    .logo-mark {
+      width: 32px; height: 32px;
+      border-radius: 6px;
+      background: var(--green);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .logo-mark svg { width: 18px; height: 18px; color: #fff; }
+    .logo-name { font-size: 14px; font-weight: 700; color: #fff; line-height: 1.2; }
+    .logo-sub  { font-size: 10px; color: var(--sidebar-text); line-height: 1; }
+    .logo-badge {
+      margin-left: auto;
+      font-size: 9px;
+      background: rgba(6,172,56,.25);
+      color: #5dcc80;
+      border: 1px solid rgba(6,172,56,.35);
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-weight: 600;
+    }
 
-    /* Status pills */
-    .status-OPEN         { background:#ef444420; color:#f87171; border:1px solid #ef444440; }
-    .status-ACKNOWLEDGED { background:#f9731620; color:#fb923c; border:1px solid #f9731640; }
-    .status-RESOLVED     { background:#22c55e20; color:#4ade80; border:1px solid #22c55e40; }
+    .sidebar-nav { padding: 10px 8px; flex: 1; }
+    .nav-section {
+      font-size: 10px; font-weight: 600;
+      letter-spacing: .08em; text-transform: uppercase;
+      color: rgba(255,255,255,.25);
+      padding: 0 10px;
+      margin: 12px 0 4px;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 9px;
+      padding: 8px 10px;
+      border-radius: 5px;
+      font-size: 13px; font-weight: 500;
+      color: var(--sidebar-text);
+      cursor: pointer;
+      transition: all .12s;
+      width: 100%; text-align: left;
+      border: none; background: none;
+    }
+    .nav-item:hover  { background: var(--sidebar-hover); color: var(--sidebar-text-a); }
+    .nav-item.active { background: var(--sidebar-active); color: var(--sidebar-text-a); }
+    .nav-item.active .nav-dot { background: var(--green); }
+    .nav-icon { width: 15px; height: 15px; flex-shrink: 0; }
+    .nav-badge {
+      margin-left: auto;
+      background: #d9212c;
+      color: #fff;
+      border-radius: 10px;
+      font-size: 10px; font-weight: 700;
+      min-width: 18px; height: 18px;
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 0 4px;
+    }
 
-    /* Nav */
-    .nav-item { display:flex; align-items:center; gap:10px; padding:8px 12px; border-radius:8px; font-size:13px; font-weight:500; color:#8b8fa8; cursor:pointer; transition:all .15s; width:100%; text-align:left; border:none; background:none; }
-    .nav-item:hover { background:#1a1d28; color:#e2e4ef; }
-    .nav-item.active { background:#1a1d28; color:#fff; }
-    .nav-item.active .nav-icon { color:#8b5cf6; }
-    .nav-icon { width:16px; height:16px; flex-shrink:0; }
+    .sidebar-footer {
+      padding: 12px 16px;
+      border-top: 1px solid rgba(255,255,255,.08);
+      font-size: 11px; color: rgba(255,255,255,.3);
+    }
+    .status-row { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+    .pulse-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+      animation: pulse 2.5s ease-in-out infinite;
+    }
+    .pulse-dot.green { background: var(--green); }
+    .pulse-dot.red   { background: #d9212c; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+    @keyframes spin   { to{transform:rotate(360deg)} }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+    .spin    { animation: spin .7s linear infinite; }
+    .fade-in { animation: fadeUp .18s ease-out; }
 
-    /* Cards */
-    .card { background:#13151e; border:1px solid #2a2d3e; border-radius:12px; }
-    .card-sm { background:#1a1d28; border:1px solid #2a2d3e; border-radius:8px; }
+    /* ── Header ──────────────────────────────────────────────────────────── */
+    .topbar {
+      height: 50px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      padding: 0 24px;
+      display: flex; align-items: center; gap: 14px;
+      flex-shrink: 0;
+    }
+    .topbar h1 { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+    .topbar-sub { font-size: 12px; color: var(--text-muted); }
+    .topbar-spacer { flex: 1; }
 
-    /* Incident row */
-    .inc-row { display:grid; align-items:center; border-bottom:1px solid #1a1d28; transition:background .1s; cursor:pointer; padding:0 20px; height:56px; }
-    .inc-row:hover { background:#13151e; }
-    .inc-row.active { background:#1a1d28; border-left:3px solid #7c3aed; }
-    .inc-row:last-child { border-bottom:none; }
+    /* ── Buttons ─────────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 13px;
+      border-radius: 5px;
+      font-size: 13px; font-weight: 500;
+      cursor: pointer; border: none;
+      transition: all .12s;
+    }
+    .btn-primary { background: var(--green); color: #fff; }
+    .btn-primary:hover { background: var(--green-dark); }
+    .btn-primary:disabled { background: #9ca3af; cursor: not-allowed; }
+    .btn-outline {
+      background: #fff; color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+    .btn-outline:hover { background: var(--bg); border-color: #c0c2c4; }
+    .btn-red {
+      background: var(--p1-bg); color: var(--p1);
+      border: 1px solid var(--p1-border);
+    }
+    .btn-red:hover { background: #fde8e9; }
+    .btn-green-soft {
+      background: var(--green-light); color: var(--green-dark);
+      border: 1px solid #b2e8c4;
+    }
+    .btn-green-soft:hover { background: #d4f1de; }
 
-    /* Timeline */
-    .tl-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; margin-top:4px; }
-    .tl-line { width:2px; background:#2a2d3e; flex:1; min-height:20px; margin:4px auto 0; }
+    /* ── Avatar ──────────────────────────────────────────────────────────── */
+    .avatar {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: var(--green);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: #fff;
+      cursor: pointer;
+    }
 
-    /* Input / select */
-    .input { background:#1a1d28; border:1px solid #2a2d3e; border-radius:8px; color:#e2e4ef; font-size:13px; padding:7px 12px; outline:none; transition:border-color .15s; }
-    .input:focus { border-color:#7c3aed; }
+    /* ── Main content ────────────────────────────────────────────────────── */
+    .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    #content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    #content-inner { flex: 1; overflow: auto; padding: 24px; }
 
-    /* Btn */
-    .btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; border:none; transition:all .15s; }
-    .btn-primary { background:#7c3aed; color:#fff; }
-    .btn-primary:hover { background:#6d28d9; }
-    .btn-ghost { background:transparent; border:1px solid #2a2d3e; color:#8b8fa8; }
-    .btn-ghost:hover { border-color:#3a3e54; color:#e2e4ef; background:#1a1d28; }
-    .btn-danger { background:#ef444420; border:1px solid #ef444440; color:#f87171; }
-    .btn-danger:hover { background:#ef444430; }
-    .btn-success { background:#22c55e20; border:1px solid #22c55e40; color:#4ade80; }
-    .btn-success:hover { background:#22c55e30; }
+    /* ── Cards ───────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .card-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-light);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .card-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+    .card-sub   { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
-    /* Metric card */
-    .metric-card { background:#13151e; border:1px solid #2a2d3e; border-radius:12px; padding:20px; }
-    .metric-value { font-size:28px; font-weight:700; line-height:1; margin:8px 0 4px; }
+    /* ── Metric card ─────────────────────────────────────────────────────── */
+    .metric-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 18px 20px;
+    }
+    .metric-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+    .metric-value { font-size: 30px; font-weight: 700; line-height: 1.1; margin: 8px 0 3px; color: var(--text-primary); }
+    .metric-desc  { font-size: 11px; color: var(--text-muted); }
 
-    /* Code / mono */
-    .mono { font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace; }
+    /* ── Severity badges ─────────────────────────────────────────────────── */
+    .sev {
+      display: inline-block; border-radius: 3px;
+      font-size: 10px; font-weight: 700;
+      padding: 2px 6px; white-space: nowrap;
+    }
+    .sev-P1 { background: var(--p1-bg); color: var(--p1); border: 1px solid var(--p1-border); }
+    .sev-P2 { background: var(--p2-bg); color: var(--p2); border: 1px solid var(--p2-border); }
+    .sev-P3 { background: var(--p3-bg); color: var(--p3); border: 1px solid var(--p3-border); }
+    .sev-P4 { background: var(--p4-bg); color: var(--p4); border: 1px solid var(--p4-border); }
 
-    /* Progress bar */
-    .progress-bar { height:5px; border-radius:3px; background:#1a1d28; overflow:hidden; }
-    .progress-fill { height:100%; border-radius:3px; transition:width .5s ease; }
+    /* Larger variant */
+    .sev-lg { font-size: 12px; padding: 3px 9px; border-radius: 4px; }
 
-    /* Table */
-    .data-table { width:100%; border-collapse:collapse; font-size:13px; }
-    .data-table th { text-align:left; padding:10px 16px; font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:#5a5e78; border-bottom:1px solid #1a1d28; }
-    .data-table td { padding:12px 16px; border-bottom:1px solid #1a1d28; vertical-align:middle; }
-    .data-table tr:last-child td { border-bottom:none; }
-    .data-table tr:hover td { background:#13151e; }
+    /* ── Status pills ────────────────────────────────────────────────────── */
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; font-weight: 600;
+      padding: 3px 9px; border-radius: 20px;
+      white-space: nowrap;
+    }
+    .status-OPEN         { background: var(--p1-bg); color: var(--p1); border: 1px solid var(--p1-border); }
+    .status-ACKNOWLEDGED { background: var(--p2-bg); color: var(--p2); border: 1px solid var(--p2-border); }
+    .status-RESOLVED     { background: var(--green-light); color: var(--green-dark); border: 1px solid #b2e8c4; }
 
-    /* Runbook step */
-    .runbook-step { display:flex; gap:12px; padding:10px 0; border-bottom:1px solid #1a1d28; }
-    .runbook-step:last-child { border-bottom:none; }
-    .step-num { width:22px; height:22px; border-radius:50%; background:#7c3aed20; border:1px solid #7c3aed40; color:#a78bfa; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    /* ── Tables ──────────────────────────────────────────────────────────── */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .data-table th {
+      text-align: left; padding: 9px 16px;
+      font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+      color: var(--text-muted);
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .data-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-light);
+      vertical-align: middle;
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover td { background: #fafafa; }
+    .data-table tr { cursor: pointer; }
 
-    /* Severity bar */
-    .sev-bar { display:flex; align-items:center; gap:10px; }
+    /* ── Incident list pane ──────────────────────────────────────────────── */
+    .inc-card {
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border-light);
+      cursor: pointer;
+      transition: background .1s;
+      border-left: 3px solid transparent;
+    }
+    .inc-card:hover  { background: #fafbfc; }
+    .inc-card.active { background: #f0f8f4; border-left-color: var(--green); }
+    .inc-title { font-size: 12px; font-weight: 600; color: var(--text-primary); line-height: 1.4; }
+    .inc-meta  { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    .inc-foot  { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+    .inc-svc   { font-size: 10px; color: var(--text-muted); font-family: monospace; }
+    .inc-age   { font-size: 10px; color: var(--text-muted); }
 
-    /* Integration badge */
-    .int-badge { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:500; }
-    .int-up   { background:#22c55e15; border:1px solid #22c55e30; color:#4ade80; }
-    .int-down { background:#ef444415; border:1px solid #ef444430; color:#f87171; }
+    /* ── Progress / severity bars ────────────────────────────────────────── */
+    .progress-track { height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; }
+    .progress-fill  { height: 100%; border-radius: 3px; transition: width .4s ease; }
 
-    /* AI badge */
-    .ai-badge { background:#7c3aed20; border:1px solid #7c3aed40; color:#a78bfa; padding:2px 8px; border-radius:20px; font-size:10px; font-weight:600; letter-spacing:.04em; }
+    /* ── Inputs ──────────────────────────────────────────────────────────── */
+    .input {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 5px; color: var(--text-primary);
+      font-size: 13px; padding: 7px 11px;
+      outline: none; transition: border-color .12s;
+      font-family: inherit;
+    }
+    .input:focus { border-color: var(--green); box-shadow: 0 0 0 2px rgba(6,172,56,.12); }
+    .input::placeholder { color: var(--text-muted); }
 
-    /* Search */
-    .search-wrap { position:relative; }
-    .search-wrap svg { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#5a5e78; width:14px; height:14px; }
-    .search-wrap input { padding-left:32px; }
+    .search-wrap { position: relative; }
+    .search-wrap .search-icon {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      color: var(--text-muted); width: 13px; height: 13px;
+    }
+    .search-wrap .input { padding-left: 30px; }
 
-    /* Tooltip */
-    [title] { cursor:default; }
+    /* ── Integration status ──────────────────────────────────────────────── */
+    .int-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; border-radius: 20px;
+      font-size: 11px; font-weight: 500;
+    }
+    .int-up   { background: var(--green-light); color: var(--green-dark); border: 1px solid #b2e8c4; }
+    .int-down { background: var(--p1-bg); color: var(--p1); border: 1px solid var(--p1-border); }
+    .int-na   { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
 
-    /* Empty state */
-    .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:60px 20px; color:#5a5e78; }
-    .empty-state svg { width:48px; height:48px; opacity:.4; }
-    .empty-state p { font-size:14px; text-align:center; }
+    /* ── AI badge ────────────────────────────────────────────────────────── */
+    .ai-badge {
+      background: var(--green-light); color: var(--green-dark);
+      border: 1px solid #b2e8c4;
+      padding: 2px 8px; border-radius: 20px;
+      font-size: 10px; font-weight: 600; letter-spacing: .03em;
+    }
+    .ai-pending-badge {
+      background: var(--p2-bg); color: var(--p2);
+      border: 1px solid var(--p2-border);
+      padding: 2px 8px; border-radius: 20px;
+      font-size: 10px; font-weight: 600;
+    }
+    .fallback-badge {
+      background: var(--bg); color: var(--text-muted);
+      border: 1px solid var(--border);
+      padding: 2px 8px; border-radius: 20px;
+      font-size: 10px; font-weight: 500;
+    }
+
+    /* ── Runbook steps ───────────────────────────────────────────────────── */
+    .step-num {
+      width: 22px; height: 22px; border-radius: 50%;
+      background: var(--green-light); color: var(--green-dark);
+      border: 1px solid #b2e8c4;
+      font-size: 10px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .runbook-step {
+      display: flex; gap: 11px; padding: 10px 0;
+      border-bottom: 1px solid var(--border-light);
+    }
+    .runbook-step:last-child { border-bottom: none; }
+
+    /* ── Timeline ────────────────────────────────────────────────────────── */
+    .tl-dot  { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+    .tl-line { width: 1px; background: var(--border); flex: 1; min-height: 18px; margin: 3px auto 0; }
+
+    /* ── Empty state ─────────────────────────────────────────────────────── */
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; padding: 60px 20px; color: var(--text-muted);
+    }
+    .empty-state svg { width: 42px; height: 42px; opacity: .3; }
+    .empty-state p { font-size: 13px; }
+
+    /* ── Code context ───────────────────────────────────────────────────── */
+    .code-block {
+      background: #1e2028;
+      border-radius: 5px;
+      overflow: hidden;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+      font-size: 11.5px;
+      line-height: 1.65;
+    }
+    .code-header {
+      padding: 7px 12px;
+      border-bottom: 1px solid rgba(255,255,255,.07);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .code-lang {
+      font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+      border-radius: 3px; padding: 2px 6px;
+    }
+    .lang-python { background: #3572a5; color: #fff; }
+    .lang-yaml   { background: #cb171e; color: #fff; }
+    .lang-hcl    { background: #5c4ee5; color: #fff; }
+    .lang-json   { background: #2e7d32; color: #fff; }
+    .code-path   { font-size: 11px; color: rgba(255,255,255,.45); margin-left: auto; }
+    .code-lines  { padding: 8px 0; overflow-x: auto; }
+    .code-line {
+      display: flex; min-width: max-content;
+      padding: 0 14px;
+    }
+    .code-line:hover { background: rgba(255,255,255,.03); }
+    .code-line.bad   {
+      background: rgba(217,33,44,.13);
+      border-left: 3px solid #d9212c;
+      padding-left: 11px;
+    }
+    .code-line-num {
+      width: 30px; flex-shrink: 0;
+      color: rgba(255,255,255,.2);
+      text-align: right; margin-right: 16px;
+      user-select: none;
+    }
+    .code-line.bad .code-line-num { color: #d9212c; }
+    .code-line-text { color: #cdd6f4; white-space: pre; }
+    .code-line.bad .code-line-text { color: #f38ba8; }
+
+    .file-tab {
+      padding: 5px 11px;
+      border-radius: 4px;
+      font-size: 11px; font-weight: 500;
+      cursor: pointer; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text-muted);
+      transition: all .12s; white-space: nowrap;
+      max-width: 180px; overflow: hidden; text-overflow: ellipsis;
+    }
+    .file-tab:hover  { border-color: #c0c2c4; color: var(--text-secondary); }
+    .file-tab.active { background: var(--surface); color: var(--text-primary); border-color: var(--green); }
+
+    .annot-box {
+      margin-top: 9px; padding: 9px 12px;
+      border-radius: 5px; font-size: 12px; line-height: 1.5;
+    }
+    .annot-warn  { background: var(--p1-bg); border: 1px solid var(--p1-border); color: #991b1b; }
+    .annot-fix   { background: var(--green-light); border: 1px solid #b2e8c4; color: var(--green-dark); }
+
+    /* ── Chip ────────────────────────────────────────────────────────────── */
+    .chip {
+      display: inline-block;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 4px; padding: 2px 7px;
+      font-size: 11px; font-family: monospace; color: var(--text-secondary);
+    }
+
+    /* ── Section label ───────────────────────────────────────────────────── */
+    .section-label {
+      font-size: 10px; font-weight: 700;
+      letter-spacing: .07em; text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    /* ── Severity-colored left stripe ────────────────────────────────────── */
+    .sev-stripe { width: 4px; border-radius: 2px; align-self: stretch; flex-shrink: 0; }
+
+    /* ── Banner row (error rate / users / trend) ─────────────────────────── */
+    .impact-banner {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; overflow: hidden;
+    }
+    .impact-cell { padding: 14px 18px; }
+    .impact-cell + .impact-cell { border-left: 1px solid var(--border); }
+    .impact-num { font-size: 22px; font-weight: 700; }
+
+    /* ── Preset card ─────────────────────────────────────────────────────── */
+    .preset-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; padding: 14px 16px;
+      cursor: pointer; text-align: left;
+      transition: box-shadow .12s, border-color .12s;
+    }
+    .preset-card:hover { border-color: #c0c2c4; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+
+    /* ── Inline code ─────────────────────────────────────────────────────── */
+    code {
+      font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+      font-size: 11px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: 3px;
+      padding: 1px 5px; color: var(--text-secondary);
+    }
   </style>
 </head>
-<body class="flex h-screen overflow-hidden">
+<body>
+<div class="app">
 
 <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
-<aside style="width:220px;background:#0d0e14;border-right:1px solid #1a1d28;display:flex;flex-direction:column;flex-shrink:0;">
+<aside class="sidebar">
 
   <!-- Logo -->
-  <div style="padding:18px 16px 14px;border-bottom:1px solid #1a1d28;display:flex;align-items:center;gap:10px;">
-    <div style="width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#7c3aed,#a855f7);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff;flex-shrink:0;">S</div>
-    <div>
-      <div style="font-weight:700;font-size:14px;color:#fff;line-height:1.2;">Sentinel</div>
-      <div style="font-size:10px;color:#5a5e78;line-height:1;">Incident Intelligence</div>
+  <div class="sidebar-logo">
+    <div class="logo-mark">
+      <!-- Shield icon -->
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
+      </svg>
     </div>
-    <div style="margin-left:auto;font-size:9px;background:#7c3aed30;color:#a78bfa;border:1px solid #7c3aed40;border-radius:4px;padding:2px 5px;font-weight:600;">v0.2</div>
+    <div>
+      <div class="logo-name">Sentinel</div>
+      <div class="logo-sub">Incident Intelligence</div>
+    </div>
+    <span class="logo-badge">v0.2</span>
   </div>
 
   <!-- Nav -->
-  <nav style="padding:12px 8px;flex:1;">
-    <div style="font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#3a3e54;padding:0 12px;margin-bottom:6px;">Monitor</div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Monitor</div>
     <button onclick="setView('overview')" id="nav-overview" class="nav-item active">
-      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+        <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+      </svg>
       Dashboard
     </button>
     <button onclick="setView('incidents')" id="nav-incidents" class="nav-item">
-      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+      </svg>
       Incidents
-      <span id="badge-open" class="hidden ml-auto text-[10px] font-bold bg-red-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center"></span>
+      <span id="badge-open" class="nav-badge" style="display:none;"></span>
     </button>
     <button onclick="setView('validations')" id="nav-validations" class="nav-item">
-      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
       Validation Log
     </button>
 
-    <div style="font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#3a3e54;padding:0 12px;margin:16px 0 6px;">Tools</div>
+    <div class="nav-section" style="margin-top:16px;">Tools</div>
     <button onclick="setView('integrations')" id="nav-integrations" class="nav-item">
-      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+      </svg>
       Integrations
     </button>
     <button onclick="setView('demo')" id="nav-demo" class="nav-item">
-      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z"/></svg>
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z"/>
+      </svg>
       Demo Mode
     </button>
   </nav>
 
-  <!-- Status footer -->
-  <div style="padding:12px 16px;border-top:1px solid #1a1d28;">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-      <div id="status-dot" class="pulse-dot" style="width:7px;height:7px;border-radius:50%;background:#22c55e;flex-shrink:0;"></div>
-      <span style="font-size:11px;color:#5a5e78;">Floci · us-east-1</span>
+  <!-- Footer -->
+  <div class="sidebar-footer">
+    <div class="status-row">
+      <div id="status-dot" class="pulse-dot green"></div>
+      <span>Floci · us-east-1</span>
     </div>
-    <div style="font-size:10px;color:#3a3e54;display:flex;align-items:center;justify-content:space-between;">
+    <div style="display:flex;justify-content:space-between;font-size:10px;">
       <span id="last-updated-mini"></span>
       <span>Auto ⟳ 15s</span>
     </div>
@@ -195,70 +548,76 @@
 </aside>
 
 <!-- ── Main ───────────────────────────────────────────────────────────── -->
-<main style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+<div class="main">
 
-  <!-- Top bar -->
-  <header style="height:52px;border-bottom:1px solid #1a1d28;padding:0 24px;display:flex;align-items:center;gap:16px;flex-shrink:0;background:#0d0e14;">
-    <h1 id="page-title" style="font-size:15px;font-weight:600;color:#fff;margin:0;"></h1>
-    <div id="page-sub" style="font-size:12px;color:#5a5e78;"></div>
-    <div style="flex:1;"></div>
-    <button onclick="refresh()" class="btn btn-ghost" style="padding:5px 10px;font-size:12px;">
-      <svg id="refresh-icon" style="width:13px;height:13px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+  <!-- Topbar -->
+  <header class="topbar">
+    <div>
+      <h1 id="page-title"></h1>
+      <div id="page-sub" class="topbar-sub"></div>
+    </div>
+    <div class="topbar-spacer"></div>
+    <button onclick="refresh()" class="btn btn-outline" style="font-size:12px;padding:5px 11px;">
+      <svg id="refresh-icon" style="width:12px;height:12px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>
+      </svg>
       Refresh
     </button>
-    <!-- User avatar -->
-    <div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#a855f7);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;cursor:pointer;" title="vishalvinayram.tally@gmail.com">V</div>
+    <div class="avatar" title="vishalvinayram.tally@gmail.com">V</div>
   </header>
 
   <!-- Content -->
-  <div id="content" style="flex:1;overflow:auto;padding:24px;" class="fade-in">
+  <div id="content" class="fade-in">
+  <div id="content-inner">
 
     <!-- ═══ OVERVIEW ═══════════════════════════════════════════════════════ -->
     <div id="view-overview">
 
-      <!-- Metric cards -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;">
+      <!-- Metric row -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">
         <div class="metric-card">
-          <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;">Open Incidents</div>
-          <div id="stat-open" class="metric-value" style="color:#f87171;">—</div>
-          <div style="font-size:11px;color:#5a5e78;">requires attention</div>
+          <div class="metric-label">Open Incidents</div>
+          <div id="stat-open" class="metric-value" style="color:var(--p1);">—</div>
+          <div class="metric-desc">requires attention</div>
         </div>
         <div class="metric-card">
-          <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;">Critical (P1/P2)</div>
-          <div id="stat-critical" class="metric-value" style="color:#fb923c;">—</div>
-          <div style="font-size:11px;color:#5a5e78;">high severity open</div>
+          <div class="metric-label">Critical (P1/P2)</div>
+          <div id="stat-critical" class="metric-value" style="color:var(--p2);">—</div>
+          <div class="metric-desc">high severity open</div>
         </div>
         <div class="metric-card">
-          <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;">False Positive Rate</div>
-          <div id="stat-fp" class="metric-value" style="color:#facc15;">—</div>
-          <div style="font-size:11px;color:#5a5e78;">of validated alerts</div>
+          <div class="metric-label">False Positive Rate</div>
+          <div id="stat-fp" class="metric-value" style="color:var(--p3);">—</div>
+          <div class="metric-desc">of validated alerts</div>
         </div>
         <div class="metric-card">
-          <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;">Avg MTTR</div>
-          <div id="stat-mttr" class="metric-value" style="color:#a78bfa;">—</div>
-          <div style="font-size:11px;color:#5a5e78;">minutes to resolve</div>
+          <div class="metric-label">Avg MTTR</div>
+          <div id="stat-mttr" class="metric-value" style="color:var(--green);">—</div>
+          <div class="metric-desc">minutes to resolve</div>
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 320px;gap:16px;">
+      <div style="display:grid;grid-template-columns:1fr 300px;gap:14px;">
 
         <!-- Recent incidents table -->
         <div class="card" style="overflow:hidden;">
-          <div style="padding:16px 20px;border-bottom:1px solid #1a1d28;display:flex;align-items:center;justify-content:space-between;">
-            <div style="font-size:13px;font-weight:600;color:#fff;">Recent Incidents</div>
-            <button onclick="setView('incidents')" class="btn btn-ghost" style="padding:4px 10px;font-size:11px;">View all →</button>
+          <div class="card-header">
+            <div>
+              <div class="card-title">Recent Incidents</div>
+            </div>
+            <button onclick="setView('incidents')" class="btn btn-outline" style="font-size:11px;padding:4px 10px;">View all →</button>
           </div>
           <div id="recent-incidents"></div>
         </div>
 
-        <!-- Sidebar: severity breakdown + system status -->
-        <div style="display:flex;flex-direction:column;gap:16px;">
-          <div class="card" style="padding:16px 20px;">
-            <div style="font-size:12px;font-weight:600;color:#fff;margin-bottom:14px;">By Severity (open)</div>
-            <div id="sev-bars" style="display:flex;flex-direction:column;gap:10px;"></div>
+        <!-- Right sidebar -->
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div class="card" style="padding:16px 18px;">
+            <div class="card-title" style="margin-bottom:13px;">By Severity</div>
+            <div id="sev-bars" style="display:flex;flex-direction:column;gap:9px;"></div>
           </div>
-          <div class="card" style="padding:16px 20px;">
-            <div style="font-size:12px;font-weight:600;color:#fff;margin-bottom:14px;">System Status</div>
+          <div class="card" style="padding:16px 18px;">
+            <div class="card-title" style="margin-bottom:13px;">System Status</div>
             <div id="system-status" style="display:flex;flex-direction:column;gap:8px;"></div>
           </div>
         </div>
@@ -266,157 +625,159 @@
     </div>
 
     <!-- ═══ INCIDENTS ══════════════════════════════════════════════════════ -->
-    <div id="view-incidents" class="hidden" style="height:100%;display:flex;gap:0;margin:-24px;overflow:hidden;">
+    <div id="view-incidents" style="display:none;flex:1;display:flex;overflow:hidden;">
 
-      <!-- Left: incident list -->
-      <div style="width:420px;flex-shrink:0;border-right:1px solid #1a1d28;display:flex;flex-direction:column;">
+      <!-- Left list -->
+      <div style="width:400px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface);">
         <!-- Filters -->
-        <div style="padding:12px 16px;border-bottom:1px solid #1a1d28;display:flex;flex-direction:column;gap:8px;background:#0d0e14;">
+        <div style="padding:10px 12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:7px;background:var(--bg);">
           <div class="search-wrap">
-            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 15.803a7.5 7.5 0 0010.607 10.607z"/></svg>
+            <svg class="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 15.803a7.5 7.5 0 0010.607 10.607z"/></svg>
             <input id="search-input" oninput="applyFilters()" class="input" style="width:100%;" placeholder="Search incidents…" />
           </div>
           <div style="display:flex;gap:6px;">
             <select id="filter-status" onchange="applyFilters()" class="input" style="flex:1;">
               <option value="">All statuses</option>
-              <option value="OPEN">Open</option>
+              <option value="OPEN">Triggered</option>
               <option value="ACKNOWLEDGED">Acknowledged</option>
               <option value="RESOLVED">Resolved</option>
             </select>
             <select id="filter-sev" onchange="applyFilters()" class="input" style="flex:1;">
               <option value="">All severities</option>
               <option value="P1">P1 Critical</option>
-              <option value="P2">P2 Major</option>
-              <option value="P3">P3 Minor</option>
-              <option value="P4">P4 Info</option>
+              <option value="P2">P2 High</option>
+              <option value="P3">P3 Medium</option>
+              <option value="P4">P4 Low</option>
             </select>
           </div>
         </div>
-        <!-- List -->
         <div id="incident-list" style="flex:1;overflow:auto;"></div>
       </div>
 
-      <!-- Right: detail -->
-      <div id="detail-panel" style="flex:1;overflow:auto;">
+      <!-- Right detail -->
+      <div id="detail-panel" style="flex:1;overflow:auto;background:var(--bg);">
         <div class="empty-state">
-          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
-          <p>Select an incident to see full RCA and runbook</p>
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
+          </svg>
+          <p>Select an incident to see full details, RCA, and runbook</p>
         </div>
       </div>
     </div>
 
     <!-- ═══ VALIDATIONS ════════════════════════════════════════════════════ -->
-    <div id="view-validations" class="hidden">
+    <div id="view-validations" style="display:none;">
       <div class="card" style="overflow:hidden;">
-        <div style="padding:16px 20px;border-bottom:1px solid #1a1d28;">
-          <div style="font-size:13px;font-weight:600;color:#fff;">Alert Validation Log</div>
-          <div style="font-size:11px;color:#5a5e78;margin-top:3px;">Every alert is validated against 3 independent signals before being declared a real incident.</div>
+        <div class="card-header">
+          <div>
+            <div class="card-title">Alert Validation Log</div>
+            <div class="card-sub">Every alert is validated against 3 independent signals before being declared a real incident.</div>
+          </div>
         </div>
         <div id="validation-table"></div>
       </div>
     </div>
 
-    <!-- ═══ INTEGRATIONS ═══════════════════════════════════════════════════ -->
-    <div id="view-integrations" class="hidden">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px;">
+    <!-- ═══ INTEGRATIONS ══════════════════════════════════════════════════ -->
+    <div id="view-integrations" style="display:none;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:900px;">
 
-        <!-- KServe / Ollama -->
-        <div class="card" style="padding:20px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-            <div style="width:36px;height:36px;border-radius:8px;background:#7c3aed20;border:1px solid #7c3aed40;display:flex;align-items:center;justify-content:center;">
-              <svg style="width:18px;height:18px;color:#a78bfa;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1 1 .03 2.798-1.414 2.798H4.212c-1.444 0-2.414-1.798-1.414-2.798L4.2 15.3"/></svg>
+        <!-- KServe -->
+        <div class="card" style="padding:18px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <div style="width:34px;height:34px;border-radius:6px;background:var(--green-light);border:1px solid #b2e8c4;display:flex;align-items:center;justify-content:center;">
+              <svg style="width:17px;height:17px;color:var(--green-dark);" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1 1 .03 2.798-1.414 2.798H4.212c-1.444 0-2.414-1.798-1.414-2.798L4.2 15.3"/></svg>
             </div>
-            <div>
-              <div style="font-size:13px;font-weight:600;color:#fff;">AI Engine (KServe + Ollama)</div>
-              <div style="font-size:11px;color:#5a5e78;">Local LLM for RCA generation</div>
+            <div style="flex:1;">
+              <div style="font-size:13px;font-weight:600;color:var(--text-primary);">AI Engine (KServe + Ollama)</div>
+              <div style="font-size:11px;color:var(--text-muted);">Local LLM for RCA generation</div>
             </div>
-            <span id="int-kserve-badge" class="int-badge int-down ml-auto">checking…</span>
+            <span id="int-kserve-badge" class="int-badge int-na">checking…</span>
           </div>
-          <div style="font-size:12px;color:#5a5e78;line-height:1.6;">
-            <div>Endpoint: <span id="int-kserve-url" class="mono" style="color:#a78bfa;font-size:11px;"></span></div>
-            <div>Model: <span id="int-kserve-model" class="mono" style="color:#a78bfa;font-size:11px;"></span></div>
+          <div style="font-size:12px;color:var(--text-secondary);line-height:1.7;">
+            <div>Endpoint: <code id="int-kserve-url"></code></div>
+            <div>Model: <code id="int-kserve-model"></code></div>
           </div>
-          <div style="margin-top:12px;padding:10px;background:#1a1d28;border-radius:8px;font-size:11px;color:#5a5e78;">
-            Start with: <code class="mono" style="color:#a78bfa;">./setup_demo.sh</code> — auto-starts Ollama + bridge on port 8081
+          <div style="margin-top:11px;padding:9px 11px;background:var(--bg);border:1px solid var(--border);border-radius:5px;font-size:11px;color:var(--text-muted);">
+            Start with: <code>./setup_demo.sh</code> — auto-starts Ollama + bridge on port 8081
           </div>
         </div>
 
         <!-- Loki -->
-        <div class="card" style="padding:20px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-            <div style="width:36px;height:36px;border-radius:8px;background:#f9731620;border:1px solid #f9731640;display:flex;align-items:center;justify-content:center;">
-              <svg style="width:18px;height:18px;color:#fb923c;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+        <div class="card" style="padding:18px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <div style="width:34px;height:34px;border-radius:6px;background:var(--p2-bg);border:1px solid var(--p2-border);display:flex;align-items:center;justify-content:center;">
+              <svg style="width:17px;height:17px;color:var(--p2);" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
             </div>
-            <div>
-              <div style="font-size:13px;font-weight:600;color:#fff;">Grafana Loki</div>
-              <div style="font-size:11px;color:#5a5e78;">Log aggregation source</div>
+            <div style="flex:1;">
+              <div style="font-size:13px;font-weight:600;color:var(--text-primary);">Grafana Loki</div>
+              <div style="font-size:11px;color:var(--text-muted);">Log aggregation source</div>
             </div>
-            <span id="int-loki-badge" class="int-badge int-down ml-auto">checking…</span>
+            <span id="int-loki-badge" class="int-badge int-na">checking…</span>
           </div>
-          <div style="font-size:12px;color:#5a5e78;line-height:1.8;">
-            <div>Set <code class="mono" style="color:#a78bfa;font-size:11px;">LOKI_URL=http://loki:3100</code></div>
-            <div>Optional: <code class="mono" style="color:#a78bfa;font-size:11px;">LOKI_TENANT_ID</code>, <code class="mono" style="color:#a78bfa;font-size:11px;">LOKI_USER</code></div>
+          <div style="font-size:12px;color:var(--text-secondary);line-height:1.8;">
+            <div>Set <code>LOKI_URL=http://loki:3100</code></div>
+            <div>Optional: <code>LOKI_TENANT_ID</code>, <code>LOKI_USER</code></div>
           </div>
-          <div style="margin-top:12px;padding:10px;background:#1a1d28;border-radius:8px;font-size:11px;color:#5a5e78;">
-            Queries <code class="mono" style="color:#a78bfa;">/loki/api/v1/query_range</code> and feeds logs into the LLM RCA prompt automatically.
+          <div style="margin-top:11px;padding:9px 11px;background:var(--bg);border:1px solid var(--border);border-radius:5px;font-size:11px;color:var(--text-muted);">
+            Queries <code>/loki/api/v1/query_range</code> and feeds logs into the LLM RCA prompt automatically.
           </div>
         </div>
 
         <!-- CloudWatch -->
-        <div class="card" style="padding:20px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-            <div style="width:36px;height:36px;border-radius:8px;background:#22c55e20;border:1px solid #22c55e40;display:flex;align-items:center;justify-content:center;">
-              <svg style="width:18px;height:18px;color:#4ade80;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"/></svg>
+        <div class="card" style="padding:18px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <div style="width:34px;height:34px;border-radius:6px;background:var(--p4-bg);border:1px solid var(--p4-border);display:flex;align-items:center;justify-content:center;">
+              <svg style="width:17px;height:17px;color:var(--p4);" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"/></svg>
             </div>
-            <div>
-              <div style="font-size:13px;font-weight:600;color:#fff;">AWS CloudWatch Logs</div>
-              <div style="font-size:11px;color:#5a5e78;">CloudWatch Logs Insights</div>
+            <div style="flex:1;">
+              <div style="font-size:13px;font-weight:600;color:var(--text-primary);">AWS CloudWatch Logs</div>
+              <div style="font-size:11px;color:var(--text-muted);">CloudWatch Logs Insights</div>
             </div>
-            <span class="int-badge int-down" style="margin-left:auto;">real AWS only</span>
+            <span class="int-badge int-na">real AWS only</span>
           </div>
-          <div style="font-size:12px;color:#5a5e78;line-height:1.8;">
-            <div>Log group prefix: <code class="mono" style="color:#a78bfa;font-size:11px;">/ecs/{service}</code></div>
-            <div>Set <code class="mono" style="color:#a78bfa;font-size:11px;">CLOUDWATCH_LOG_GROUP_PREFIX</code></div>
+          <div style="font-size:12px;color:var(--text-secondary);line-height:1.8;">
+            <div>Log group prefix: <code>/ecs/{service}</code></div>
+            <div>Set <code>CLOUDWATCH_LOG_GROUP_PREFIX</code></div>
           </div>
-          <div style="margin-top:12px;padding:10px;background:#1a1d28;border-radius:8px;font-size:11px;color:#5a5e78;">
-            Used as fallback when Loki is not configured. Requires <code class="mono" style="color:#a78bfa;">logs:StartQuery</code> IAM permission.
+          <div style="margin-top:11px;padding:9px 11px;background:var(--bg);border:1px solid var(--border);border-radius:5px;font-size:11px;color:var(--text-muted);">
+            Used as fallback when Loki is not configured. Requires <code>logs:StartQuery</code> IAM permission.
           </div>
         </div>
 
         <!-- Floci -->
-        <div class="card" style="padding:20px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-            <div style="width:36px;height:36px;border-radius:8px;background:#facc1520;border:1px solid #facc1540;display:flex;align-items:center;justify-content:center;">
-              <svg style="width:18px;height:18px;color:#fde047;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"/></svg>
+        <div class="card" style="padding:18px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <div style="width:34px;height:34px;border-radius:6px;background:var(--p3-bg);border:1px solid var(--p3-border);display:flex;align-items:center;justify-content:center;">
+              <svg style="width:17px;height:17px;color:var(--p3);" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"/></svg>
             </div>
-            <div>
-              <div style="font-size:13px;font-weight:600;color:#fff;">Floci (Local AWS)</div>
-              <div style="font-size:11px;color:#5a5e78;">DynamoDB · Kinesis · SQS</div>
+            <div style="flex:1;">
+              <div style="font-size:13px;font-weight:600;color:var(--text-primary);">Floci (Local AWS)</div>
+              <div style="font-size:11px;color:var(--text-muted);">DynamoDB · Kinesis · SQS</div>
             </div>
-            <span id="int-floci-badge" class="int-badge int-down ml-auto">checking…</span>
+            <span id="int-floci-badge" class="int-badge int-na">checking…</span>
           </div>
-          <div style="font-size:12px;color:#5a5e78;line-height:1.8;">
-            <div>Endpoint: <code class="mono" style="color:#a78bfa;font-size:11px;">http://localhost:4566</code></div>
+          <div style="font-size:12px;color:var(--text-secondary);line-height:1.8;">
+            <div>Endpoint: <code>http://localhost:4566</code></div>
             <div>Tables: incidents · validation · pr-reviews</div>
           </div>
-          <div style="margin-top:12px;padding:10px;background:#1a1d28;border-radius:8px;font-size:11px;color:#5a5e78;">
-            Emulates DynamoDB, Kinesis, and SQS locally. Start with <code class="mono" style="color:#a78bfa;">./setup_demo.sh</code>.
+          <div style="margin-top:11px;padding:9px 11px;background:var(--bg);border:1px solid var(--border);border-radius:5px;font-size:11px;color:var(--text-muted);">
+            Emulates DynamoDB, Kinesis, and SQS locally. Start with <code>./setup_demo.sh</code>.
           </div>
         </div>
-
       </div>
     </div>
 
     <!-- ═══ DEMO MODE ══════════════════════════════════════════════════════ -->
-    <div id="view-demo" class="hidden" style="max-width:760px;">
+    <div id="view-demo" style="display:none;max-width:740px;">
 
-      <div class="card" style="padding:24px;margin-bottom:16px;">
-        <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:4px;">Fire a Demo Incident</div>
-        <div style="font-size:12px;color:#5a5e78;margin-bottom:20px;">Generates a realistic incident with AI-powered RCA in ~30 seconds. Instantly visible in the Incidents view.</div>
+      <div class="card" style="padding:22px;margin-bottom:14px;">
+        <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:3px;">Fire a Demo Incident</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:18px;">Generates a realistic incident with AI-powered RCA in ~30 seconds. Instantly visible in the Incidents view.</div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:11px;">
           <div>
-            <label style="font-size:11px;font-weight:600;color:#8b8fa8;display:block;margin-bottom:6px;">Service</label>
+            <label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:5px;">Service</label>
             <select id="demo-service" class="input" style="width:100%;">
               <option value="auth-service">auth-service</option>
               <option value="payments-service">payments-service</option>
@@ -431,96 +792,94 @@
             </select>
           </div>
           <div>
-            <label style="font-size:11px;font-weight:600;color:#8b8fa8;display:block;margin-bottom:6px;">Severity</label>
+            <label style="font-size:11px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:5px;">Severity</label>
             <select id="demo-sev" class="input" style="width:100%;">
               <option value="P1">P1 — Critical (full outage)</option>
-              <option value="P2" selected>P2 — Major degradation</option>
-              <option value="P3">P3 — Minor / elevated errors</option>
-              <option value="P4">P4 — Informational / cost</option>
+              <option value="P2" selected>P2 — High (major degradation)</option>
+              <option value="P3">P3 — Medium (elevated errors)</option>
+              <option value="P4">P4 — Low (informational)</option>
             </select>
           </div>
         </div>
 
-        <button onclick="fireDemoIncident()" id="fire-btn" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px;">
-          <svg style="width:15px;height:15px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+        <button onclick="fireDemoIncident()" id="fire-btn" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px;font-size:14px;">
+          <svg style="width:15px;height:15px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/>
+          </svg>
           Fire Incident
         </button>
 
-        <div id="demo-result" class="hidden" style="margin-top:14px;padding:12px;background:#1a1d28;border-radius:8px;font-size:12px;font-family:monospace;"></div>
+        <div id="demo-result" style="display:none;margin-top:12px;padding:11px;background:var(--bg);border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:monospace;white-space:pre-line;color:var(--text-secondary);"></div>
       </div>
 
       <!-- Presets -->
-      <div class="card" style="padding:20px;">
-        <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;margin-bottom:14px;">Quick Scenario Presets</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="card" style="padding:18px;">
+        <div class="section-label" style="margin-bottom:12px;">Quick Scenario Presets</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
 
-          <button onclick="preset('auth-service','P1')" style="background:#ef444410;border:1px solid #ef444430;border-radius:10px;padding:14px;text-align:left;cursor:pointer;transition:all .15s;" onmouseover="this.style.background='#ef444420'" onmouseout="this.style.background='#ef444410'">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-              <span class="sev-P1" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">P1</span>
-              <span style="font-size:12px;font-weight:600;color:#fff;">Auth Service Down</span>
+          <button onclick="preset('auth-service','P1')" class="preset-card" style="border-left:3px solid var(--p1);">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+              <span class="sev sev-P1">P1</span>
+              <span style="font-size:12px;font-weight:600;color:var(--text-primary);">Auth Service Down</span>
             </div>
-            <div style="font-size:11px;color:#8b8fa8;">DB connection pool exhausted, 95% login failure</div>
+            <div style="font-size:11px;color:var(--text-muted);">DB connection pool exhausted, 95% login failure</div>
           </button>
 
-          <button onclick="preset('payments-service','P2')" style="background:#f9731610;border:1px solid #f9731630;border-radius:10px;padding:14px;text-align:left;cursor:pointer;transition:all .15s;" onmouseover="this.style.background='#f9731620'" onmouseout="this.style.background='#f9731610'">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-              <span class="sev-P2" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">P2</span>
-              <span style="font-size:12px;font-weight:600;color:#fff;">Payment Degradation</span>
+          <button onclick="preset('payments-service','P2')" class="preset-card" style="border-left:3px solid var(--p2);">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+              <span class="sev sev-P2">P2</span>
+              <span style="font-size:12px;font-weight:600;color:var(--text-primary);">Payment Degradation</span>
             </div>
-            <div style="font-size:11px;color:#8b8fa8;">Memory leak in token cache, OOM restart loop</div>
+            <div style="font-size:11px;color:var(--text-muted);">Memory leak in token cache, OOM restart loop</div>
           </button>
 
-          <button onclick="preset('search-api','P3')" style="background:#eab30810;border:1px solid #eab30830;border-radius:10px;padding:14px;text-align:left;cursor:pointer;transition:all .15s;" onmouseover="this.style.background='#eab30820'" onmouseout="this.style.background='#eab30810'">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-              <span class="sev-P3" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">P3</span>
-              <span style="font-size:12px;font-weight:600;color:#fff;">Search Rate Limited</span>
+          <button onclick="preset('search-api','P3')" class="preset-card" style="border-left:3px solid var(--p3);">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+              <span class="sev sev-P3">P3</span>
+              <span style="font-size:12px;font-weight:600;color:var(--text-primary);">Search Rate Limited</span>
             </div>
-            <div style="font-size:11px;color:#8b8fa8;">Elasticsearch 429s from bulk index rebuild</div>
+            <div style="font-size:11px;color:var(--text-muted);">Elasticsearch 429s from bulk index rebuild</div>
           </button>
 
-          <button onclick="preset('data-pipeline','P2')" style="background:#f9731610;border:1px solid #f9731630;border-radius:10px;padding:14px;text-align:left;cursor:pointer;transition:all .15s;" onmouseover="this.style.background='#f9731620'" onmouseout="this.style.background='#f9731610'">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-              <span class="sev-P2" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">P2</span>
-              <span style="font-size:12px;font-weight:600;color:#fff;">Data Pipeline Stalled</span>
+          <button onclick="preset('data-pipeline','P2')" class="preset-card" style="border-left:3px solid var(--p2);">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+              <span class="sev sev-P2">P2</span>
+              <span style="font-size:12px;font-weight:600;color:var(--text-primary);">Data Pipeline Stalled</span>
             </div>
-            <div style="font-size:11px;color:#8b8fa8;">Kinesis shard iterator expired, DLQ spike</div>
+            <div style="font-size:11px;color:var(--text-muted);">Kinesis shard iterator expired, DLQ spike</div>
           </button>
 
-          <button onclick="preset('api-gateway','P1')" style="background:#ef444410;border:1px solid #ef444430;border-radius:10px;padding:14px;text-align:left;cursor:pointer;transition:all .15s;" onmouseover="this.style.background='#ef444420'" onmouseout="this.style.background='#ef444410'">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-              <span class="sev-P1" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">P1</span>
-              <span style="font-size:12px;font-weight:600;color:#fff;">API Gateway Cascade</span>
+          <button onclick="preset('api-gateway','P1')" class="preset-card" style="border-left:3px solid var(--p1);">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+              <span class="sev sev-P1">P1</span>
+              <span style="font-size:12px;font-weight:600;color:var(--text-primary);">API Gateway Cascade</span>
             </div>
-            <div style="font-size:11px;color:#8b8fa8;">Circuit breaker open, upstream timeout cascade</div>
+            <div style="font-size:11px;color:var(--text-muted);">Circuit breaker open, upstream timeout cascade</div>
           </button>
 
-          <button onclick="preset('worker-service','P4')" style="background:#22c55e10;border:1px solid #22c55e30;border-radius:10px;padding:14px;text-align:left;cursor:pointer;transition:all .15s;" onmouseover="this.style.background='#22c55e20'" onmouseout="this.style.background='#22c55e10'">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-              <span class="sev-P4" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">P4</span>
-              <span style="font-size:12px;font-weight:600;color:#fff;">Debug Log Noise</span>
+          <button onclick="preset('worker-service','P4')" class="preset-card" style="border-left:3px solid var(--p4);">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+              <span class="sev sev-P4">P4</span>
+              <span style="font-size:12px;font-weight:600;color:var(--text-primary);">Debug Log Noise</span>
             </div>
-            <div style="font-size:11px;color:#8b8fa8;">Verbose logging left on after hotfix, cost impact</div>
+            <div style="font-size:11px;color:var(--text-muted);">Verbose logging left on after hotfix, cost impact</div>
           </button>
-
         </div>
       </div>
     </div>
 
+  </div><!-- /content-inner -->
   </div><!-- /content -->
-</main>
+</div><!-- /main -->
+</div><!-- /app -->
 
 <script>
-// ═══════════════════════════════════════════════════════════════════════════
-// State
-// ═══════════════════════════════════════════════════════════════════════════
 const API = '';
 let allIncidents = [];
 let selectedId   = null;
 let currentView  = 'overview';
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Navigation
-// ═══════════════════════════════════════════════════════════════════════════
+// ── Navigation ───────────────────────────────────────────────────────────────
 const VIEWS = {
   overview:     { title: 'Dashboard',       sub: 'Incident intelligence at a glance' },
   incidents:    { title: 'Incidents',        sub: 'Click an incident to view full RCA and runbook' },
@@ -531,74 +890,79 @@ const VIEWS = {
 
 function setView(v) {
   currentView = v;
+  const inner   = document.getElementById('content-inner');
+  const incView = document.getElementById('view-incidents');
   const content = document.getElementById('content');
+
   const isFullBleed = v === 'incidents';
-  content.style.padding = isFullBleed ? '0' : '24px';
+  inner.style.display = isFullBleed ? 'none' : '';
+
+  if (isFullBleed) {
+    if (incView.parentNode !== content) content.appendChild(incView);
+    incView.style.cssText = 'display:flex;flex:1;overflow:hidden;';
+  } else {
+    if (incView.parentNode !== inner) inner.appendChild(incView);
+    incView.style.display = 'none';
+  }
 
   Object.keys(VIEWS).forEach(k => {
-    const viewEl = document.getElementById('view-' + k);
-    if (viewEl) {
-      viewEl.classList.toggle('hidden', k !== v);
-      if (k === v) viewEl.style.display = '';
-    }
+    if (k === 'incidents') return;
+    const el = document.getElementById('view-' + k);
+    if (el) el.style.display = (k === v) ? '' : 'none';
     const btn = document.getElementById('nav-' + k);
     if (btn) btn.classList.toggle('active', k === v);
   });
+  const incBtn = document.getElementById('nav-incidents');
+  if (incBtn) incBtn.classList.toggle('active', v === 'incidents');
 
   document.getElementById('page-title').textContent = VIEWS[v].title;
   document.getElementById('page-sub').textContent   = VIEWS[v].sub;
 
-  if (v === 'incidents')   renderIncidentList(allIncidents);
-  if (v === 'validations') loadValidations();
+  if (v === 'incidents')    renderIncidentList(allIncidents);
+  if (v === 'validations')  loadValidations();
   if (v === 'integrations') loadIntegrations();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════════════════════
+// ── Helpers ──────────────────────────────────────────────────────────────────
 function sevBadge(sev, large) {
-  const size = large ? 'font-size:12px;padding:3px 8px;' : 'font-size:10px;padding:2px 6px;';
-  return `<span class="sev-${sev}" style="${size}border-radius:5px;font-weight:700;white-space:nowrap;">${sev}</span>`;
+  const cls = large ? 'sev sev-' + sev + ' sev-lg' : 'sev sev-' + sev;
+  return `<span class="${cls}">${sev}</span>`;
 }
 
 function statusPill(s) {
-  const cls = `status-${s}`;
-  const label = s === 'OPEN' ? 'Open' : s === 'ACKNOWLEDGED' ? 'Ack\'d' : 'Resolved';
-  return `<span class="${cls}" style="font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;white-space:nowrap;">${label}</span>`;
+  const labels = { OPEN: 'Triggered', ACKNOWLEDGED: 'Acknowledged', RESOLVED: 'Resolved' };
+  return `<span class="status-pill status-${s}">${labels[s] || s}</span>`;
 }
 
 function fmtDate(iso) {
   if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
-  } catch { return iso.slice(0,16); }
+  try { return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }); }
+  catch { return iso.slice(0,16); }
 }
 
 function fmtRelative(iso) {
   if (!iso) return '';
   try {
-    const diff = Date.now() - new Date(iso).getTime();
-    const m = Math.floor(diff / 60000);
-    if (m < 1)   return 'just now';
-    if (m < 60)  return `${m}m ago`;
+    const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+    if (m < 1)  return 'just now';
+    if (m < 60) return `${m}m ago`;
     const h = Math.floor(m / 60);
-    if (h < 24)  return `${h}h ago`;
+    if (h < 24) return `${h}h ago`;
     return `${Math.floor(h/24)}d ago`;
   } catch { return ''; }
 }
 
 function duration(from, to) {
   try {
-    const ms = new Date(to || new Date()).getTime() - new Date(from).getTime();
-    const m  = Math.round(ms / 60000);
+    const m = Math.round((new Date(to || new Date()) - new Date(from)) / 60000);
     if (m < 60) return `${m}m`;
     return `${Math.floor(m/60)}h ${m%60}m`;
   } catch { return '—'; }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Overview
-// ═══════════════════════════════════════════════════════════════════════════
+const SEV_COLOR = { P1:'var(--p1)', P2:'var(--p2)', P3:'var(--p3)', P4:'var(--p4)' };
+
+// ── Overview ─────────────────────────────────────────────────────────────────
 async function loadOverview() {
   const [incidents, stats] = await Promise.all([
     fetch(API + '/api/incidents').then(r => r.json()).catch(() => []),
@@ -606,10 +970,10 @@ async function loadOverview() {
   ]);
   allIncidents = incidents;
 
-  const open   = stats.open_incidents ?? 0;
-  const crit   = (stats.severity_breakdown?.P1 ?? 0) + (stats.severity_breakdown?.P2 ?? 0);
-  const fp     = stats.false_positive_rate ?? 0;
-  const mttr   = stats.mttr_minutes ?? 0;
+  const open  = stats.open_incidents ?? 0;
+  const crit  = (stats.severity_breakdown?.P1 ?? 0) + (stats.severity_breakdown?.P2 ?? 0);
+  const fp    = stats.false_positive_rate ?? 0;
+  const mttr  = stats.mttr_minutes ?? 0;
 
   document.getElementById('stat-open').textContent     = open;
   document.getElementById('stat-critical').textContent = crit;
@@ -617,26 +981,22 @@ async function loadOverview() {
   document.getElementById('stat-mttr').textContent     = mttr ? mttr + 'm' : '—';
 
   const badge = document.getElementById('badge-open');
-  badge.textContent = open;
-  badge.classList.toggle('hidden', open === 0);
+  badge.textContent    = open;
+  badge.style.display  = open ? 'inline-flex' : 'none';
 
-  // Severity bars
   const maxV = Math.max(1, ...Object.values(stats.severity_breakdown ?? {}));
-  const sevColors = { P1:'#ef4444', P2:'#f97316', P3:'#eab308', P4:'#22c55e' };
+  const sevColors = { P1:'var(--p1)', P2:'var(--p2)', P3:'var(--p3)', P4:'var(--p4)' };
   document.getElementById('sev-bars').innerHTML = ['P1','P2','P3','P4'].map(s => {
     const count = stats.severity_breakdown?.[s] ?? 0;
     const pct   = Math.round(count / maxV * 100);
-    return `<div class="sev-bar">
+    return `<div style="display:flex;align-items:center;gap:8px;">
       ${sevBadge(s)}
-      <div class="progress-bar" style="flex:1;">
-        <div class="progress-fill" style="width:${pct}%;background:${sevColors[s]};"></div>
-      </div>
-      <span style="font-size:12px;color:#8b8fa8;width:18px;text-align:right;">${count}</span>
+      <div class="progress-track" style="flex:1;"><div class="progress-fill" style="width:${pct}%;background:${sevColors[s]};"></div></div>
+      <span style="font-size:12px;color:var(--text-muted);width:14px;text-align:right;">${count}</span>
     </div>`;
   }).join('');
 
-  // Recent table
-  const recent = incidents.slice(0, 8);
+  const recent   = incidents.slice(0, 8);
   const recentEl = document.getElementById('recent-incidents');
   if (!recent.length) {
     recentEl.innerHTML = '<div class="empty-state" style="padding:40px 20px;"><p>No incidents yet — fire one in Demo Mode</p></div>';
@@ -644,57 +1004,48 @@ async function loadOverview() {
     recentEl.innerHTML = `
       <table class="data-table">
         <thead><tr>
-          <th>Title</th>
-          <th>Sev</th>
-          <th>Status</th>
-          <th>When</th>
-          <th>Duration</th>
+          <th>Title</th><th>Sev</th><th>Status</th><th>When</th><th>Duration</th>
         </tr></thead>
         <tbody>
-        ${recent.map(i => `<tr onclick="openIncident('${i.incident_id}')" style="cursor:pointer;">
+        ${recent.map(i => `<tr onclick="openIncident('${i.incident_id}')">
           <td>
-            <div style="font-size:13px;font-weight:500;color:#fff;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.title || i.service_name}</div>
-            <div style="font-size:11px;color:#5a5e78;font-family:monospace;">${i.service_name}</div>
+            <div style="font-size:13px;font-weight:500;color:var(--text-primary);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.title || i.service_name}</div>
+            <div style="font-size:11px;color:var(--text-muted);font-family:monospace;">${i.service_name}</div>
           </td>
           <td>${sevBadge(i.severity)}</td>
           <td>${statusPill(i.status ?? 'OPEN')}</td>
-          <td style="color:#5a5e78;white-space:nowrap;">${fmtRelative(i.created_at)}</td>
-          <td style="color:#5a5e78;white-space:nowrap;">${duration(i.created_at, i.resolved_at)}</td>
+          <td style="color:var(--text-muted);white-space:nowrap;">${fmtRelative(i.created_at)}</td>
+          <td style="color:var(--text-muted);white-space:nowrap;">${duration(i.created_at, i.resolved_at)}</td>
         </tr>`).join('')}
         </tbody>
       </table>`;
   }
-
-  // System status
   loadSystemStatus();
 }
 
 async function loadSystemStatus() {
   const el = document.getElementById('system-status');
-  el.innerHTML = '<div style="font-size:11px;color:#5a5e78;">Checking…</div>';
   try {
     const s = await fetch(API + '/api/integrations/status').then(r => r.json()).catch(() => ({}));
     const items = [
-      { name: 'Floci / DynamoDB', up: s.dynamodb?.up ?? false },
-      { name: 'KServe + Ollama',  up: s.kserve?.up  ?? false },
-      { name: 'Loki',             up: s.loki?.up     ?? false, optional: !s.loki?.configured },
+      { name:'Floci / DynamoDB', up: s.dynamodb?.up ?? false },
+      { name:'KServe + Ollama',  up: s.kserve?.up  ?? false },
+      { name:'Loki',             up: s.loki?.up     ?? false, optional: !s.loki?.configured },
     ];
     el.innerHTML = items.map(item => `
       <div style="display:flex;align-items:center;justify-content:space-between;">
-        <span style="font-size:12px;color:#8b8fa8;">${item.name}</span>
+        <span style="font-size:12px;color:var(--text-secondary);">${item.name}</span>
         ${item.optional && !item.up
-          ? '<span style="font-size:10px;color:#5a5e78;">not configured</span>'
-          : `<div class="pulse-dot" style="width:7px;height:7px;border-radius:50%;background:${item.up ? '#22c55e' : '#ef4444'};"></div>`
+          ? '<span style="font-size:11px;color:var(--text-muted);">not configured</span>'
+          : `<div class="pulse-dot ${item.up ? 'green' : 'red'}"></div>`
         }
       </div>`).join('');
   } catch {
-    el.innerHTML = '<div style="font-size:11px;color:#5a5e78;">unavailable</div>';
+    el.innerHTML = '<div style="font-size:11px;color:var(--text-muted);">unavailable</div>';
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Incidents list
-// ═══════════════════════════════════════════════════════════════════════════
+// ── Incidents list ────────────────────────────────────────────────────────────
 function openIncident(id) {
   selectedId = id;
   setView('incidents');
@@ -722,30 +1073,25 @@ function renderIncidentList(items) {
     el.innerHTML = '<div class="empty-state" style="padding:40px 16px;"><p>No incidents match filters</p></div>';
     return;
   }
+  const isOpen = i => (i.status ?? 'OPEN') !== 'RESOLVED';
   el.innerHTML = items.map(i => {
     const active  = i.incident_id === selectedId;
-    const isOpen  = i.status !== 'RESOLVED';
-    const dotColor = { P1:'#ef4444', P2:'#f97316', P3:'#eab308', P4:'#22c55e' }[i.severity] || '#5a5e78';
-    const pending  = i.metadata?.ai_pending;
-    return `<div onclick="loadDetail('${i.incident_id}')" class="${active ? 'active' : ''}" style="
-        padding:14px 16px;border-bottom:1px solid #1a1d28;cursor:pointer;
-        background:${active ? '#1a1d28' : 'transparent'};
-        ${active ? 'border-left:3px solid #7c3aed;' : 'border-left:3px solid transparent;'}
-        transition:background .1s;
-      " onmouseover="if(!${active})this.style.background='#13151e'" onmouseout="if(!${active})this.style.background='transparent'">
-      <div style="display:flex;align-items:flex-start;gap:10px;">
-        <div class="pulse-dot" style="width:8px;height:8px;border-radius:50%;background:${dotColor};margin-top:5px;flex-shrink:0;${isOpen ? '' : 'animation:none;opacity:.5;'}"></div>
+    const dotCol  = SEV_COLOR[i.severity] || 'var(--text-muted)';
+    const pending = i.metadata?.ai_pending;
+    return `<div onclick="loadDetail('${i.incident_id}')" class="inc-card ${active ? 'active' : ''}">
+      <div style="display:flex;align-items:flex-start;gap:9px;">
+        <div class="pulse-dot ${isOpen(i) ? '' : 'red'}" style="background:${dotCol};margin-top:5px;flex-shrink:0;${!isOpen(i) ? 'animation:none;opacity:.5;' : ''}"></div>
         <div style="flex:1;min-width:0;">
-          <div style="font-size:12px;font-weight:600;color:#fff;line-height:1.4;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${i.title || i.service_name}</div>
-          <div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap;">
+          <div class="inc-title" style="overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${i.title || i.service_name}</div>
+          <div class="inc-meta">
             ${sevBadge(i.severity)}
             ${statusPill(i.status ?? 'OPEN')}
-            ${pending ? '<span style="font-size:10px;color:#a78bfa;">⏳ AI pending</span>' : ''}
-            ${i.assignee ? `<span style="font-size:10px;color:#5a5e78;">→ ${i.assignee}</span>` : ''}
+            ${pending ? '<span style="font-size:10px;color:var(--p2);">⏳ AI pending</span>' : ''}
+            ${i.assignee ? `<span style="font-size:10px;color:var(--text-muted);">→ ${i.assignee}</span>` : ''}
           </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:5px;">
-            <span style="font-size:10px;color:#5a5e78;font-family:monospace;">${i.service_name}</span>
-            <span style="font-size:10px;color:#5a5e78;">${fmtRelative(i.created_at)}</span>
+          <div class="inc-foot">
+            <span class="inc-svc">${i.service_name}</span>
+            <span class="inc-age">${fmtRelative(i.created_at)}</span>
           </div>
         </div>
       </div>
@@ -753,22 +1099,23 @@ function renderIncidentList(items) {
   }).join('');
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Incident detail
-// ═══════════════════════════════════════════════════════════════════════════
+// ── Incident detail ───────────────────────────────────────────────────────────
 async function loadDetail(id) {
   selectedId = id;
   renderIncidentList(allIncidents);
 
   const panel = document.getElementById('detail-panel');
-  panel.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#5a5e78;font-size:13px;gap:8px;">
-    <svg class="spin" style="width:16px;height:16px;" fill="none" viewBox="0 0 24 24"><circle style="opacity:.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-    Loading incident…
+  panel.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:13px;gap:8px;">
+    <svg class="spin" style="width:15px;height:15px;" fill="none" viewBox="0 0 24 24">
+      <circle style="opacity:.2" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path style="opacity:.8" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+    </svg>
+    Loading…
   </div>`;
 
   const inc = await fetch(API + '/api/incidents/' + id).then(r => r.json()).catch(() => null);
   if (!inc) {
-    panel.innerHTML = '<div style="padding:24px;color:#f87171;font-size:13px;">Failed to load incident.</div>';
+    panel.innerHTML = '<div style="padding:24px;color:var(--p1);font-size:13px;">Failed to load incident.</div>';
     return;
   }
 
@@ -780,147 +1127,151 @@ async function loadDetail(id) {
   const isAIPending = inc.metadata?.ai_pending;
   const isAI        = inc.ai_generated;
   const srcBadge = isAI
-    ? '<span class="ai-badge">AI · kserve-ollama</span>'
+    ? '<span class="ai-badge">✓ AI · kserve-ollama</span>'
     : isAIPending
-    ? '<span class="ai-badge" style="color:#fb923c;border-color:#f9731640;background:#f9731620;">⏳ AI generating…</span>'
-    : '<span style="font-size:10px;color:#5a5e78;background:#1a1d28;border:1px solid #2a2d3e;border-radius:20px;padding:2px 8px;">fallback text</span>';
+    ? '<span class="ai-pending-badge">⏳ AI generating…</span>'
+    : '<span class="fallback-badge">fallback text</span>';
 
-  // Timeline events
   const tlEvents = [];
-  if (inc.created_at)       tlEvents.push({ ts: inc.created_at,       label: 'Incident created',            color: '#ef4444' });
-  if (inc.acknowledged_at)  tlEvents.push({ ts: inc.acknowledged_at,  label: `Acknowledged by ${inc.assignee || 'on-call'}`, color: '#f97316' });
-  if (inc.resolved_at)      tlEvents.push({ ts: inc.resolved_at,      label: 'Incident resolved',           color: '#22c55e' });
-  if (!isAIPending && !inc.resolved_at) tlEvents.push({ ts: inc.created_at, label: 'RCA analysis complete', color: '#8b5cf6' });
+  if (inc.created_at)      tlEvents.push({ ts: inc.created_at,      label: 'Incident triggered',                   color: 'var(--p1)' });
+  if (inc.acknowledged_at) tlEvents.push({ ts: inc.acknowledged_at, label: `Acknowledged by ${inc.assignee||'on-call'}`, color: 'var(--p2)' });
+  if (!isAIPending && !inc.resolved_at) tlEvents.push({ ts: inc.created_at, label: 'RCA analysis complete',        color: 'var(--green)' });
+  if (inc.resolved_at)     tlEvents.push({ ts: inc.resolved_at,     label: 'Incident resolved',                    color: 'var(--green)' });
   tlEvents.sort((a, b) => new Date(a.ts) - new Date(b.ts));
 
-  const sevColor  = { P1:'#ef4444', P2:'#f97316', P3:'#eab308', P4:'#22c55e' }[inc.severity] || '#5a5e78';
-  const errorPct  = impact.error_rate_in_sample != null ? (parseFloat(impact.error_rate_in_sample) * 100).toFixed(1) + '%' : '—';
-  const usersPct  = impact.users_impacted_pct != null ? impact.users_impacted_pct + '%' : '—';
-  const components = (logs.affected_components ?? []).join(' · ') || '—';
+  const sevCol = SEV_COLOR[inc.severity] || 'var(--text-muted)';
+  const errorPct = impact.error_rate_in_sample != null ? (parseFloat(impact.error_rate_in_sample)*100).toFixed(1)+'%' : '—';
+  const usersPct = impact.users_impacted_pct   != null ? impact.users_impacted_pct+'%' : '—';
+  const trendCol = logs.degradation_trend === 'worsening' ? 'var(--p1)'
+                 : logs.degradation_trend === 'improving' ? 'var(--green)'
+                 : 'var(--p3)';
 
   panel.innerHTML = `
-  <div style="padding:24px;max-width:900px;" class="fade-in">
+  <div style="padding:22px;max-width:880px;" class="fade-in">
 
-    <!-- ── Header ──────────────────────────────────────────────────────── -->
-    <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:24px;">
-      <div style="width:4px;border-radius:4px;background:${sevColor};align-self:stretch;flex-shrink:0;"></div>
-      <div style="flex:1;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
-          ${sevBadge(inc.severity, true)}
-          ${statusPill(inc.status ?? 'OPEN')}
-          ${srcBadge}
-          <span style="font-size:11px;color:#3a3e54;font-family:monospace;">${inc.incident_id?.slice(0,8)}…</span>
+    <!-- Header -->
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:14px;">
+      <div style="height:4px;background:${sevCol};"></div>
+      <div style="padding:18px 20px;">
+        <div style="display:flex;align-items:flex-start;gap:16px;">
+          <div style="flex:1;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+              ${sevBadge(inc.severity, true)}
+              ${statusPill(inc.status ?? 'OPEN')}
+              ${srcBadge}
+              <span style="font-size:11px;color:var(--text-muted);font-family:monospace;">#${inc.incident_id?.slice(0,8)}</span>
+            </div>
+            <h2 style="font-size:17px;font-weight:700;color:var(--text-primary);margin:0 0 6px;line-height:1.3;">${inc.title || inc.service_name}</h2>
+            <div style="display:flex;align-items:center;gap:14px;font-size:12px;color:var(--text-muted);flex-wrap:wrap;">
+              <span style="font-family:monospace;">${inc.service_name}</span>
+              <span>Created ${fmtDate(inc.created_at)}</span>
+              <span>Duration: ${duration(inc.created_at, inc.resolved_at)}</span>
+              ${inc.assignee ? `<span>Assignee: <strong style="color:var(--text-primary);">${inc.assignee}</strong></span>` : ''}
+            </div>
+          </div>
+          <div style="display:flex;gap:7px;flex-shrink:0;">
+            ${inc.status === 'OPEN' ? `
+              <button onclick="ackIncident('${inc.incident_id}')" class="btn btn-outline" style="font-size:12px;">Acknowledge</button>
+              <button onclick="resolveIncident('${inc.incident_id}')" class="btn btn-green-soft" style="font-size:12px;">Mark Resolved</button>
+            ` : inc.status === 'ACKNOWLEDGED' ? `
+              <button onclick="resolveIncident('${inc.incident_id}')" class="btn btn-green-soft" style="font-size:12px;">Mark Resolved</button>
+            ` : `<span style="font-size:12px;color:var(--green);font-weight:500;">✓ Resolved ${fmtDate(inc.resolved_at)}</span>`}
+          </div>
         </div>
-        <h2 style="font-size:18px;font-weight:700;color:#fff;margin:0 0 4px;line-height:1.3;">${inc.title || inc.service_name}</h2>
-        <div style="display:flex;align-items:center;gap:16px;font-size:12px;color:#5a5e78;flex-wrap:wrap;">
-          <span style="font-family:monospace;color:#8b8fa8;">${inc.service_name}</span>
-          <span>Created ${fmtDate(inc.created_at)}</span>
-          <span>Duration: ${duration(inc.created_at, inc.resolved_at)}</span>
-          ${inc.assignee ? `<span>Assignee: <strong style="color:#a78bfa;">${inc.assignee}</strong></span>` : ''}
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;flex-shrink:0;">
-        ${inc.status === 'OPEN' ? `
-          <button onclick="ackIncident('${inc.incident_id}')" class="btn btn-ghost" style="font-size:12px;">Acknowledge</button>
-          <button onclick="resolveIncident('${inc.incident_id}')" class="btn btn-success" style="font-size:12px;">Mark Resolved</button>
-        ` : inc.status === 'ACKNOWLEDGED' ? `
-          <button onclick="resolveIncident('${inc.incident_id}')" class="btn btn-success" style="font-size:12px;">Mark Resolved</button>
-        ` : `<span style="font-size:12px;color:#4ade80;">✓ Resolved ${fmtDate(inc.resolved_at)}</span>`}
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 280px;gap:16px;align-items:start;">
+    <div style="display:grid;grid-template-columns:1fr 260px;gap:14px;align-items:start;">
 
-    <!-- ── Left column ─────────────────────────────────────────────────── -->
-    <div style="display:flex;flex-direction:column;gap:16px;">
+    <!-- Left -->
+    <div style="display:flex;flex-direction:column;gap:14px;">
 
       <!-- Impact banner -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;background:#13151e;border:1px solid #2a2d3e;border-radius:12px;overflow:hidden;">
-        <div style="padding:16px 20px;border-right:1px solid #2a2d3e;">
-          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;margin-bottom:4px;">Error Rate</div>
-          <div style="font-size:24px;font-weight:700;color:${sevColor};">${errorPct}</div>
+      <div class="impact-banner">
+        <div class="impact-cell">
+          <div class="section-label" style="margin-bottom:5px;">Error Rate</div>
+          <div class="impact-num" style="color:${sevCol};">${errorPct}</div>
         </div>
-        <div style="padding:16px 20px;border-right:1px solid #2a2d3e;">
-          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;margin-bottom:4px;">Users Impacted</div>
-          <div style="font-size:24px;font-weight:700;color:${sevColor};">${usersPct}</div>
+        <div class="impact-cell">
+          <div class="section-label" style="margin-bottom:5px;">Users Impacted</div>
+          <div class="impact-num" style="color:${sevCol};">${usersPct}</div>
         </div>
-        <div style="padding:16px 20px;">
-          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;margin-bottom:4px;">Trend</div>
-          <div style="font-size:18px;font-weight:700;color:${logs.degradation_trend === 'worsening' ? '#ef4444' : logs.degradation_trend === 'improving' ? '#22c55e' : '#facc15'};">${logs.degradation_trend || 'stable'}</div>
+        <div class="impact-cell">
+          <div class="section-label" style="margin-bottom:5px;">Trend</div>
+          <div class="impact-num" style="font-size:16px;color:${trendCol};">${logs.degradation_trend || 'stable'}</div>
         </div>
       </div>
-      ${impact.summary ? `<div style="font-size:12px;color:#8b8fa8;padding:0 4px;line-height:1.6;">${impact.summary}</div>` : ''}
+      ${impact.summary ? `<div style="font-size:12px;color:var(--text-secondary);padding:0 2px;line-height:1.6;">${impact.summary}</div>` : ''}
 
       <!-- RCA -->
-      <div class="card" style="padding:20px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-          <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#a78bfa;">Root Cause Analysis</div>
+      <div class="card" style="padding:18px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;">
+          <div class="section-label" style="color:var(--text-primary);">Root Cause Analysis</div>
           ${srcBadge}
         </div>
-        <p style="font-size:13px;color:#e2e4ef;line-height:1.7;margin:0;">${
+        <p style="font-size:13px;color:var(--text-primary);line-height:1.7;margin:0;">${
           isAIPending
-            ? '<span style="color:#f97316;">⏳ AI is analysing this incident — check back in ~30 seconds. The page auto-refreshes every 15 s.</span>'
-            : inc.root_cause || '<span style="color:#5a5e78;">No RCA available.</span>'
+            ? '<span style="color:var(--p2);">⏳ AI is analysing this incident — check back in ~30 seconds. The page auto-refreshes every 15 s.</span>'
+            : inc.root_cause || '<span style="color:var(--text-muted);">No RCA available.</span>'
         }</p>
         ${logs.affected_components?.length ? `
-        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #2a2d3e;">
-          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;margin-bottom:8px;">Affected Components</div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;">${(logs.affected_components || []).map(c =>
-            `<span style="background:#1a1d28;border:1px solid #2a2d3e;border-radius:6px;padding:3px 8px;font-size:11px;font-family:monospace;color:#a78bfa;">${c}</span>`
-          ).join('')}</div>
+        <div style="margin-top:13px;padding-top:13px;border-top:1px solid var(--border-light);">
+          <div class="section-label" style="margin-bottom:7px;">Affected Components</div>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;">${(logs.affected_components||[]).map(c =>
+            `<span class="chip">${c}</span>`).join('')}</div>
         </div>` : ''}
       </div>
 
       <!-- Runbook -->
-      ${rbSteps.length ? `<div class="card" style="padding:20px;">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#4ade80;margin-bottom:14px;">Remediation Runbook</div>
-        <div>${rbSteps.map(([k, v], i) => `
+      ${rbSteps.length ? `<div class="card" style="padding:18px;">
+        <div class="section-label" style="margin-bottom:13px;">Remediation Runbook</div>
+        <div>${rbSteps.map(([k,v],i) => `
           <div class="runbook-step">
-            <div class="step-num">${i + 1}</div>
-            <div style="font-size:13px;color:#d4d6e8;line-height:1.5;padding-top:2px;">${v}</div>
-          </div>`).join('')}
-        </div>
+            <div class="step-num">${i+1}</div>
+            <div style="font-size:13px;color:var(--text-primary);line-height:1.55;padding-top:2px;">${v}</div>
+          </div>`).join('')}</div>
       </div>` : ''}
 
-      <!-- Log analysis metadata -->
-      <div class="card" style="padding:20px;">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#facc15;margin-bottom:14px;">Log Analysis</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <!-- Source Context -->
+      ${renderCodeContext(inc.code_context)}
+
+      <!-- Log analysis -->
+      <div class="card" style="padding:18px;">
+        <div class="section-label" style="margin-bottom:12px;">Log Analysis</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
           ${[
-            ['Rule Severity',  logs.rule_severity ?? '—'],
-            ['ML Severity',    logs.ml_severity   ?? '—'],
-            ['Log Lines',      logs.log_sample_size ?? '—'],
-            ['Analyzed At',    logs.analyzed_at ? fmtDate(logs.analyzed_at) : '—'],
-          ].map(([label, val]) => `
-            <div style="background:#1a1d28;border:1px solid #2a2d3e;border-radius:8px;padding:10px 12px;">
-              <div style="font-size:10px;color:#5a5e78;margin-bottom:3px;">${label}</div>
-              <div style="font-size:13px;font-weight:600;color:#fff;">${val}</div>
+            ['Rule Severity', logs.rule_severity ?? '—'],
+            ['ML Severity',   logs.ml_severity   ?? '—'],
+            ['Log Lines',     logs.log_sample_size ?? '—'],
+            ['Analyzed At',   logs.analyzed_at ? fmtDate(logs.analyzed_at) : '—'],
+          ].map(([label,val]) => `
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:10px 12px;">
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">${label}</div>
+              <div style="font-size:13px;font-weight:600;color:var(--text-primary);">${val}</div>
             </div>`).join('')}
         </div>
       </div>
-
     </div>
 
-    <!-- ── Right column: timeline ───────────────────────────────────────── -->
-    <div style="display:flex;flex-direction:column;gap:16px;">
-      <div class="card" style="padding:20px;">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8b8fa8;margin-bottom:16px;">Timeline</div>
-        ${tlEvents.map((e, idx) => `
-          <div style="display:flex;gap:12px;">
-            <div style="display:flex;flex-direction:column;align-items:center;width:10px;">
+    <!-- Right: timeline + metadata -->
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="card" style="padding:18px;">
+        <div class="section-label" style="margin-bottom:15px;">Timeline</div>
+        ${tlEvents.map((e,idx) => `
+          <div style="display:flex;gap:11px;">
+            <div style="display:flex;flex-direction:column;align-items:center;width:9px;">
               <div class="tl-dot" style="background:${e.color};"></div>
-              ${idx < tlEvents.length - 1 ? '<div class="tl-line"></div>' : ''}
+              ${idx < tlEvents.length-1 ? '<div class="tl-line"></div>' : ''}
             </div>
-            <div style="padding-bottom:${idx < tlEvents.length - 1 ? '16px' : '0'};">
-              <div style="font-size:12px;color:#e2e4ef;font-weight:500;">${e.label}</div>
-              <div style="font-size:10px;color:#5a5e78;margin-top:2px;">${fmtDate(e.ts)}</div>
+            <div style="padding-bottom:${idx < tlEvents.length-1 ? '14px' : '0'};">
+              <div style="font-size:12px;color:var(--text-primary);font-weight:500;">${e.label}</div>
+              <div style="font-size:10px;color:var(--text-muted);margin-top:1px;">${fmtDate(e.ts)}</div>
             </div>
           </div>`).join('')}
       </div>
 
-      <!-- Metadata -->
-      <div class="card" style="padding:20px;">
-        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8b8fa8;margin-bottom:14px;">Metadata</div>
+      <div class="card" style="padding:18px;">
+        <div class="section-label" style="margin-bottom:12px;">Metadata</div>
         <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
           ${[
             ['Incident ID',  inc.incident_id?.slice(0,12) + '…'],
@@ -928,22 +1279,20 @@ async function loadDetail(id) {
             ['Team',         inc.metadata?.team || '—'],
             ['Source',       inc.metadata?.source || '—'],
             ['RCA source',   inc.rca_source || '—'],
-          ].map(([k, v]) => `
+          ].map(([k,v]) => `
             <div style="display:flex;justify-content:space-between;gap:8px;">
-              <span style="color:#5a5e78;">${k}</span>
-              <span style="color:#8b8fa8;font-family:monospace;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px;" title="${v}">${v}</span>
+              <span style="color:var(--text-muted);">${k}</span>
+              <span style="color:var(--text-secondary);font-family:monospace;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px;" title="${v}">${v}</span>
             </div>`).join('')}
         </div>
       </div>
     </div>
 
-    </div><!-- /grid -->
+    </div>
   </div>`;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Incident actions
-// ═══════════════════════════════════════════════════════════════════════════
+// ── Incident actions ──────────────────────────────────────────────────────────
 async function resolveIncident(id) {
   await fetch(API + '/api/incidents/' + id + '/resolve', { method: 'POST' });
   await refresh();
@@ -960,9 +1309,7 @@ async function ackIncident(id) {
   if (selectedId) loadDetail(selectedId);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Validations
-// ═══════════════════════════════════════════════════════════════════════════
+// ── Validations ───────────────────────────────────────────────────────────────
 async function loadValidations() {
   const rows = await fetch(API + '/api/validations').then(r => r.json()).catch(() => []);
   const el   = document.getElementById('validation-table');
@@ -978,46 +1325,46 @@ async function loadValidations() {
     ${rows.map(r => {
       const real = r.is_real_incident === 'true';
       return `<tr>
-        <td style="font-family:monospace;color:#5a5e78;">${(r.alert_id||'—').slice(0,10)}…</td>
-        <td style="font-family:monospace;color:#a78bfa;">${r.service_name || '—'}</td>
-        <td style="color:#8b8fa8;">${r.signals_failed ?? 0} / ${r.signals_checked ?? 0} failed</td>
-        <td><span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;${real ? 'background:#ef444420;color:#f87171;border:1px solid #ef444440;' : 'background:#22c55e20;color:#4ade80;border:1px solid #22c55e40;'}">${real ? '⚠ REAL INCIDENT' : '✓ False Positive'}</span></td>
-        <td style="color:#5a5e78;">${fmtDate(r.validated_at)}</td>
+        <td style="font-family:monospace;color:var(--text-muted);">${(r.alert_id||'—').slice(0,10)}…</td>
+        <td style="font-family:monospace;color:var(--text-secondary);">${r.service_name || '—'}</td>
+        <td style="color:var(--text-secondary);">${r.signals_failed ?? 0} / ${r.signals_checked ?? 0} failed</td>
+        <td><span class="status-pill ${real ? 'status-OPEN' : 'status-RESOLVED'}">${real ? '⚠ Real Incident' : '✓ False Positive'}</span></td>
+        <td style="color:var(--text-muted);">${fmtDate(r.validated_at)}</td>
       </tr>`;
     }).join('')}
     </tbody></table>`;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Integrations
-// ═══════════════════════════════════════════════════════════════════════════
+// ── Integrations ──────────────────────────────────────────────────────────────
 async function loadIntegrations() {
   const s = await fetch(API + '/api/integrations/status').then(r => r.json()).catch(() => ({}));
-
-  const kserve = s.kserve ?? {};
-  const loki   = s.loki   ?? {};
+  const kserve = s.kserve  ?? {};
+  const loki   = s.loki    ?? {};
   const dynamo = s.dynamodb ?? {};
 
-  const up   = v => `<span class="int-badge int-up">● Online</span>`;
-  const down = v => `<span class="int-badge int-down">● Offline</span>`;
+  const up   = () => `<span class="int-badge int-up">● Online</span>`;
+  const down = () => `<span class="int-badge int-down">● Offline</span>`;
 
-  document.getElementById('int-kserve-badge').outerHTML = kserve.up ? up() : down();
-  document.getElementById('int-kserve-url').textContent   = kserve.url   || 'http://localhost:8081';
-  document.getElementById('int-kserve-model').textContent = kserve.model || '—';
-  document.getElementById('int-loki-badge').outerHTML     = loki.up ? up() : down();
-  document.getElementById('int-floci-badge').outerHTML    = dynamo.up ? up() : down();
+  const kserveBadge = document.getElementById('int-kserve-badge');
+  if (kserveBadge) kserveBadge.outerHTML = kserve.up ? up() : down();
+  const kurlEl = document.getElementById('int-kserve-url');
+  if (kurlEl) kurlEl.textContent = kserve.url || 'http://localhost:8081';
+  const kmodelEl = document.getElementById('int-kserve-model');
+  if (kmodelEl) kmodelEl.textContent = kserve.model || '—';
+  const lokiBadge = document.getElementById('int-loki-badge');
+  if (lokiBadge) lokiBadge.outerHTML = loki.up ? up() : down();
+  const flciBadge = document.getElementById('int-floci-badge');
+  if (flciBadge) flciBadge.outerHTML = dynamo.up ? up() : down();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Demo mode
-// ═══════════════════════════════════════════════════════════════════════════
+// ── Demo ──────────────────────────────────────────────────────────────────────
 async function fireDemoIncident() {
   const btn = document.getElementById('fire-btn');
   const svc = document.getElementById('demo-service').value;
   const sev = document.getElementById('demo-sev').value;
 
   btn.disabled = true;
-  btn.innerHTML = `<svg class="spin" style="width:14px;height:14px;" fill="none" viewBox="0 0 24 24"><circle style="opacity:.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Firing…`;
+  btn.innerHTML = `<svg class="spin" style="width:14px;height:14px;" fill="none" viewBox="0 0 24 24"><circle style="opacity:.2" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:.8" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Firing…`;
 
   const res = await fetch(API + '/api/demo/fire', {
     method:  'POST',
@@ -1029,13 +1376,13 @@ async function fireDemoIncident() {
   btn.innerHTML = `<svg style="width:15px;height:15px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg> Fire Incident`;
 
   const resultEl = document.getElementById('demo-result');
-  resultEl.classList.remove('hidden');
+  resultEl.style.display = '';
 
   if (res.error) {
-    resultEl.style.color = '#f87171';
+    resultEl.style.color = 'var(--p1)';
     resultEl.innerHTML = `✗ ${res.error}`;
   } else {
-    resultEl.style.color = '#4ade80';
+    resultEl.style.color = 'var(--green)';
     resultEl.innerHTML = `✓ Incident created\n  ID: ${res.incident_id}\n  Title: ${res.title}\n\n→ AI RCA generating in background (~30s)\n→ Switching to Incidents view…`;
     await refresh();
     setTimeout(() => openIncident(res.incident_id), 800);
@@ -1048,22 +1395,89 @@ function preset(svc, sev) {
   fireDemoIncident();
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Refresh
-// ═══════════════════════════════════════════════════════════════════════════
+// ── Source context renderer ───────────────────────────────────────────────────
+
+function _langClass(lang) {
+  return { python:'lang-python', yaml:'lang-yaml', hcl:'lang-hcl', json:'lang-json' }[lang] || 'lang-python';
+}
+
+function _renderCodeFile(file) {
+  const badSet = new Set(file.highlight_offsets || []);
+  const lineNums = file.lines.map((ln, idx) => {
+    const lineNo  = (file.start_line || 1) + idx;
+    const isBad   = badSet.has(idx);
+    const cls     = isBad ? 'code-line bad' : 'code-line';
+    const escaped = ln.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<div class="${cls}">
+      <span class="code-line-num">${lineNo}</span>
+      <span class="code-line-text">${escaped || ' '}</span>
+    </div>`;
+  }).join('');
+
+  const filename = file.path.split('/').pop();
+  const langCls  = _langClass(file.language);
+
+  return `
+    <div class="code-block">
+      <div class="code-header">
+        <span class="code-lang ${langCls}">${file.language}</span>
+        <span style="font-size:11px;color:rgba(255,255,255,.35);">lines ${file.start_line}–${(file.start_line||1)+file.lines.length-1}</span>
+        <span class="code-path">${file.path}</span>
+      </div>
+      <div class="code-lines">${lineNums}</div>
+    </div>
+    ${file.annotation ? `<div class="annot-box annot-warn">⚠ ${file.annotation}</div>` : ''}
+    ${file.fix       ? `<div class="annot-box annot-fix">💡 <strong>Fix:</strong> ${file.fix}</div>` : ''}`;
+}
+
+function renderCodeContext(ctx) {
+  if (!ctx || !ctx.files || !ctx.files.length) return '';
+  const files = ctx.files;
+
+  const tabs = files.map((f, i) =>
+    `<button class="file-tab${i===0?' active':''}" onclick="switchCodeTab(this,${i},'ctx-${f.path.replace(/\W/g,'_')}')">${f.path.split('/').pop()}</button>`
+  ).join('');
+
+  const panels = files.map((f, i) =>
+    `<div class="code-panel" id="ctx-${f.path.replace(/\W/g,'_')}" style="${i>0?'display:none':''}">
+      ${_renderCodeFile(f)}
+    </div>`
+  ).join('');
+
+  return `
+    <div class="card" style="padding:18px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div class="section-label">Source Context</div>
+        <span style="font-size:11px;color:var(--text-muted);">${files.length} file${files.length>1?'s':''}</span>
+      </div>
+      ${ctx.summary ? `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:11px;line-height:1.5;">${ctx.summary}</div>` : ''}
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px;">${tabs}</div>
+      ${panels}
+    </div>`;
+}
+
+function switchCodeTab(btn, idx, panelId) {
+  const card = btn.closest('.card');
+  card.querySelectorAll('.file-tab').forEach(b => b.classList.remove('active'));
+  card.querySelectorAll('.code-panel').forEach(p => p.style.display = 'none');
+  btn.classList.add('active');
+  const panel = card.querySelector('#' + panelId);
+  if (panel) panel.style.display = '';
+}
+
+// ── Refresh ───────────────────────────────────────────────────────────────────
 async function refresh() {
   const icon = document.getElementById('refresh-icon');
   if (icon) icon.classList.add('spin');
   try {
     allIncidents = await fetch(API + '/api/incidents').then(r => r.json()).catch(() => []);
-    const now = new Date().toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    const now  = new Date().toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
     const mini = document.getElementById('last-updated-mini');
     if (mini) mini.textContent = now;
 
-    // Update open badge
-    const open  = allIncidents.filter(i => i.status === 'OPEN').length;
+    const open  = allIncidents.filter(i => (i.status ?? 'OPEN') === 'OPEN').length;
     const badge = document.getElementById('badge-open');
-    if (badge) { badge.textContent = open; badge.classList.toggle('hidden', open === 0); }
+    if (badge) { badge.textContent = open; badge.style.display = open ? 'inline-flex' : 'none'; }
 
     if (currentView === 'overview')    await loadOverview();
     if (currentView === 'incidents')   { applyFilters(); if (selectedId) await loadDetail(selectedId); }
@@ -1073,9 +1487,7 @@ async function refresh() {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Boot
-// ═══════════════════════════════════════════════════════════════════════════
+// ── Boot ──────────────────────────────────────────────────────────────────────
 (async () => {
   setView('overview');
   await loadOverview();
