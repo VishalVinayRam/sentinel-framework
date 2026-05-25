@@ -1118,6 +1118,9 @@ async function loadDetail(id) {
     panel.innerHTML = '<div style="padding:24px;color:var(--p1);font-size:13px;">Failed to load incident.</div>';
     return;
   }
+  const logData = inc.service
+    ? await fetch(API + '/api/logs/' + encodeURIComponent(inc.service)).then(r => r.json()).catch(() => ({ lines: [], source: 'none' }))
+    : { lines: [], source: 'none' };
 
   const logs   = inc.log_analysis ?? {};
   const impact = inc.impact_scope ?? {};
@@ -1127,7 +1130,7 @@ async function loadDetail(id) {
   const isAIPending = inc.metadata?.ai_pending;
   const isAI        = inc.ai_generated;
   const srcBadge = isAI
-    ? '<span class="ai-badge">✓ AI · kserve-ollama</span>'
+    ? `<span class="ai-badge">✓ AI · ${inc.rca_source || 'ai'}</span>`
     : isAIPending
     ? '<span class="ai-pending-badge">⏳ AI generating…</span>'
     : '<span class="fallback-badge">fallback text</span>';
@@ -1234,6 +1237,23 @@ async function loadDetail(id) {
 
       <!-- Source Context -->
       ${renderCodeContext(inc.code_context)}
+
+      <!-- Live log lines -->
+      ${logData.lines && logData.lines.length > 0 ? `
+      <div class="card" style="padding:18px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div class="section-label">Live Logs</div>
+          <span style="font-size:10px;color:var(--text-muted);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 7px;">${logData.source} · ${logData.count} lines</span>
+        </div>
+        <div style="background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:12px 14px;max-height:220px;overflow-y:auto;font-family:'JetBrains Mono',monospace,ui-monospace;font-size:11px;line-height:1.6;color:#e6edf3;">
+          ${logData.lines.map(l => {
+            const lvl = /\b(ERROR|CRITICAL|FATAL)\b/.test(l) ? 'var(--p1)'
+                      : /\b(WARN|WARNING)\b/.test(l)          ? 'var(--p2)'
+                      : '#8b949e';
+            return `<div style="color:${lvl};white-space:pre-wrap;word-break:break-all;">${l.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`;
+          }).join('')}
+        </div>
+      </div>` : ''}
 
       <!-- Log analysis -->
       <div class="card" style="padding:18px;">

@@ -44,9 +44,21 @@ INCIDENTS_TABLE  = os.environ.get("INCIDENTS_TABLE",           "sentinel-inciden
 PR_REVIEWS_TABLE = os.environ.get("PR_REVIEWS_TABLE",          "sentinel-pr-reviews")
 VALIDATION_TABLE = os.environ.get("VALIDATION_RESULTS_TABLE",  "sentinel-validation-results")
 
-# setup_demo.sh starts the KServe bridge on 8081 — match that default
+# KServe / Ollama (local, always tried first — free)
 KSERVE_ENDPOINT = os.environ.get("KSERVE_ENDPOINT", "http://localhost:8081")
 KSERVE_MODEL    = os.environ.get("KSERVE_MODEL",    "llama3.2:1b")
+
+# Cloud LLM API keys — any combination is valid; chain tries them in order
+GEMINI_API_KEY    = os.environ.get("GEMINI_API_KEY",    "")
+GEMINI_MODEL      = os.environ.get("GEMINI_MODEL",      "gemini-1.5-flash")
+OPENAI_API_KEY    = os.environ.get("OPENAI_API_KEY",    "")
+OPENAI_MODEL      = os.environ.get("OPENAI_MODEL",      "gpt-4o-mini")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL   = os.environ.get("ANTHROPIC_MODEL",   "claude-haiku-4-5-20251001")
+
+# Slack — set SLACK_WEBHOOK_URL to get P1/P2 notifications
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
+SLACK_CHANNEL     = os.environ.get("SLACK_CHANNEL",     "")
 
 # Optional log source configuration
 LOKI_URL         = os.environ.get("LOKI_URL",   "")          # e.g. http://localhost:3100
@@ -888,77 +900,202 @@ def _fetch_log_context(service: str, minutes: int = 30) -> str:
     return ""
 
 
-# ── KServe / AI helpers ────────────────────────────────────────────────────
+# ── LLM provider chain ─────────────────────────────────────────────────────
 
-# Prompt tuned for small instruction models (1b–7b params):
-# - Short, imperative framing
-# - Concrete template to fill in — avoids free-form hallucination
-# - Strict "JSON only" instruction repeated at end
-_RCA_SYSTEM = (
-    "You are a senior SRE. Respond with raw JSON only. "
-    "No markdown, no explanation, no backticks. JSON only."
-)
+def _build_llm_chain():
+    """Build ordered provider list from available env vars at startup.
 
-_RCA_PROMPT = """\
-Production incident. Fill every field with a plain English string.
-Do NOT nest JSON inside strings. Output valid JSON and nothing else.
+    Order: KServe (local/free) → Gemini → OpenAI → Anthropic
+    Any provider whose key / endpoint is missing is skipped silently.
+    """
+    providers = []
+    try:
+        from sentinel.providers.llm.kserve import KServeProvider
+        providers.append(KServeProvider(endpoint=KSERVE_ENDPOINT, model_name=KSERVE_MODEL))
+        print(f"[llm-chain] + KServe  {KSERVE_ENDPOINT}  model={KSERVE_MODEL}", file=sys.stderr)
+    except Exception as e:
+        print(f"[llm-chain] KServe skip: {e}", file=sys.stderr)
 
-Service: {service}
-Severity: {severity}
+    if GEMINI_API_KEY:
+        try:
+            from sentinel.providers.llm.gemini import GeminiProvider
+            providers.append(GeminiProvider(api_key=GEMINI_API_KEY, model=GEMINI_MODEL))
+            print(f"[llm-chain] + Gemini  model={GEMINI_MODEL}", file=sys.stderr)
+        except Exception as e:
+            print(f"[llm-chain] Gemini skip: {e}", file=sys.stderr)
+
+    if OPENAI_API_KEY:
+        try:
+            from sentinel.providers.llm.openai import OpenAIProvider
+            providers.append(OpenAIProvider(api_key=OPENAI_API_KEY, model=OPENAI_MODEL))
+            print(f"[llm-chain] + OpenAI  model={OPENAI_MODEL}", file=sys.stderr)
+        except Exception as e:
+            print(f"[llm-chain] OpenAI skip: {e}", file=sys.stderr)
+
+    if ANTHROPIC_API_KEY:
+        try:
+            from sentinel.providers.llm.anthropic import AnthropicProvider
+            providers.append(AnthropicProvider(api_key=ANTHROPIC_API_KEY, model=ANTHROPIC_MODEL))
+            print(f"[llm-chain] + Anthropic  model={ANTHROPIC_MODEL}", file=sys.stderr)
+        except Exception as e:
+            print(f"[llm-chain] Anthropic skip: {e}", file=sys.stderr)
+
+    if not providers:
+        print("[llm-chain] WARNING: no providers configured — RCA will use fallback text", file=sys.stderr)
+    return providers
+
+
+# Build once at startup — not per-request
+_LLM_PROVIDERS: list = []
+
+
+def _get_llm_providers() -> list:
+    global _LLM_PROVIDERS
+    if not _LLM_PROVIDERS:
+        _LLM_PROVIDERS = _build_llm_chain()
+    return _LLM_PROVIDERS
+
+
+# ── RCA prompts ────────────────────────────────────────────────────────────
+
+# Short prompt for small local models (1b–3b): tight JSON template, minimal context
+_RCA_PROMPT_SMALL = """\
+Production incident. Fill every field. Output raw JSON only, no markdown.
+
+Service: {service}  Severity: {severity}
 {log_section}
-Template to complete:
-{{"root_cause":"FILL — one sentence, technical root cause","summary":"FILL — one sentence, business impact","runbook":{{"step1":"FILL","step2":"FILL","step3":"FILL","step4":"FILL"}},"degradation_trend":"worsening","affected_components":["{service}","database"]}}
+{{"root_cause":"one sentence technical root cause","summary":"one sentence business impact","runbook":{{"step1":"action","step2":"action","step3":"action","step4":"action"}},"degradation_trend":"worsening","affected_components":["{service}"]}}
 
 JSON:"""
 
+# Rich prompt for capable models (Gemini Flash, GPT-4o-mini, Claude Haiku)
+_RCA_PROMPT_FULL = """\
+You are a senior SRE performing root cause analysis on a production incident.
 
-def _call_kserve(service: str, severity: str, log_context: str = "") -> Optional[dict]:
-    """Call the local KServe/Ollama bridge and parse the AI-generated RCA."""
+## Incident
+- Service: {service}
+- Severity: {severity}
+- Time: {timestamp}
+{log_section}{code_section}
+## Task
+Analyse this incident and return a JSON object with EXACTLY these fields:
+- root_cause: string — precise technical root cause in one sentence
+- summary: string — business impact in one sentence
+- contributing_factors: list of strings — up to 3 contributing factors
+- runbook: object with step1, step2, step3, step4 (strings) — immediate remediation steps
+- degradation_trend: "worsening" | "stable" | "improving"
+- affected_components: list of strings — affected services/systems
+- confidence: "high" | "medium" | "low"
+
+Return ONLY the JSON object. No markdown fences, no explanation."""
+
+_RCA_SYSTEM = "You are a senior SRE. Respond with raw JSON only. No markdown, no backticks."
+
+
+def _is_small_model(provider) -> bool:
+    name = type(provider).__name__
+    return name == "KServeProvider"
+
+
+def _call_llm_chain(service: str, severity: str, log_context: str = "",
+                    code_context: Optional[dict] = None) -> tuple[Optional[dict], str]:
+    """Try each provider in the chain and return (parsed_rca, provider_name).
+
+    Returns (None, 'none') if all providers fail — caller uses fallback text.
+    """
+    providers = _get_llm_providers()
+    if not providers:
+        return None, "none"
+
     log_section = ""
     if log_context:
-        # Trim to last 800 chars so small models don't OOM on the prompt
-        excerpt = log_context[-800:].strip()
-        log_section = f"Recent error logs:\n{excerpt}\n"
+        excerpt = log_context[-1200:].strip()
+        log_section = f"\n## Recent error logs\n```\n{excerpt}\n```\n"
 
-    prompt = _RCA_PROMPT.format(service=service, severity=severity, log_section=log_section)
+    code_section = ""
+    if code_context and code_context.get("files"):
+        f = code_context["files"][0]
+        snippet = "\n".join(f.get("lines", [])[:20])
+        code_section = f"\n## Relevant source code ({f['path']} line {f.get('start_line',1)})\n```{f.get('language','')}\n{snippet}\n```\n"
 
+    from datetime import datetime, timezone
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    last_err = None
+    for provider in providers:
+        name = type(provider).__name__
+        try:
+            if not provider.health_check():
+                print(f"[rca-bg] {name} unhealthy — skipping", file=sys.stderr)
+                continue
+
+            if _is_small_model(provider):
+                log_short = log_context[-800:].strip() if log_context else ""
+                log_sec = f"Recent logs:\n{log_short}\n" if log_short else ""
+                prompt = _RCA_PROMPT_SMALL.format(
+                    service=service, severity=severity, log_section=log_sec
+                )
+                max_tokens = 400
+            else:
+                prompt = _RCA_PROMPT_FULL.format(
+                    service=service, severity=severity, timestamp=timestamp,
+                    log_section=log_section, code_section=code_section,
+                )
+                max_tokens = 600
+
+            result = provider.complete(prompt, max_tokens=max_tokens, temperature=0.1)
+            raw = result.text
+
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
+            if not match:
+                print(f"[rca-bg] {name}: no JSON in output — {raw[:120]}", file=sys.stderr)
+                continue
+
+            parsed = json.loads(match.group())
+            rc = str(parsed.get("root_cause", ""))
+            if len(rc) < 15:
+                print(f"[rca-bg] {name}: root_cause too short — retrying next", file=sys.stderr)
+                continue
+
+            print(f"[rca-bg] {name} succeeded — root_cause: {rc[:80]}", file=sys.stderr)
+            provider_label = {
+                "KServeProvider":    f"kserve-ollama ({KSERVE_MODEL})",
+                "GeminiProvider":    f"gemini ({GEMINI_MODEL})",
+                "OpenAIProvider":    f"openai ({OPENAI_MODEL})",
+                "AnthropicProvider": f"anthropic ({ANTHROPIC_MODEL})",
+            }.get(name, name.lower())
+            return parsed, provider_label
+
+        except Exception as e:
+            print(f"[rca-bg] {name} error: {e}", file=sys.stderr)
+            last_err = e
+            continue
+
+    print(f"[rca-bg] all providers failed — last: {last_err}", file=sys.stderr)
+    return None, "none"
+
+
+# ── Slack notifications ─────────────────────────────────────────────────────
+
+def _notify_slack(incident_id: str, title: str, service: str, severity: str,
+                  root_cause: str, provider_label: str) -> None:
+    if not SLACK_WEBHOOK_URL:
+        return
     try:
-        resp = _requests.post(
-            f"{KSERVE_ENDPOINT}/v1/models/{KSERVE_MODEL}:predict",
-            json={
-                "inputs": [{"name": "text_input", "shape": [1], "datatype": "BYTES", "data": [prompt]}],
-                "parameters": {
-                    "max_new_tokens": 400,
-                    "temperature": 0.05,
-                    "system": _RCA_SYSTEM,
-                },
-            },
-            timeout=120,
-        )
-        resp.raise_for_status()
-        raw = resp.json()["outputs"][0]["data"][0]
+        from sentinel.providers.alerting.slack import SlackProvider
+        from sentinel.providers.base.alerting import AlertPayload
+        slack = SlackProvider(webhook_url=SLACK_WEBHOOK_URL, channel=SLACK_CHANNEL)
+        slack.send_alert(AlertPayload(
+            incident_id=incident_id,
+            title=title,
+            body=f"{root_cause}\n\n_RCA by {provider_label}_",
+            severity=severity,
+            service_name=service,
+            runbook_url=f"http://localhost:8501/#incident-{incident_id}",
+        ))
+        print(f"[slack] notified for {severity} {service}", file=sys.stderr)
     except Exception as e:
-        print(f"[rca-bg] KServe call failed: {e}", file=sys.stderr)
-        return None
-
-    # Robustly extract the first JSON object from model output
-    match = re.search(r"\{.*\}", raw, re.DOTALL)
-    if not match:
-        print(f"[rca-bg] No JSON found in model output: {raw[:200]}", file=sys.stderr)
-        return None
-
-    try:
-        parsed = json.loads(match.group())
-    except json.JSONDecodeError as e:
-        print(f"[rca-bg] JSON parse error: {e} — raw: {raw[:300]}", file=sys.stderr)
-        return None
-
-    rc = str(parsed.get("root_cause", ""))
-    if len(rc) < 15:
-        print(f"[rca-bg] root_cause too short ({rc!r}), discarding", file=sys.stderr)
-        return None
-
-    return parsed
+        print(f"[slack] failed: {e}", file=sys.stderr)
 
 
 def _update_incident_rca(
@@ -968,6 +1105,7 @@ def _update_incident_rca(
     service: str,
     rca_fallback: str,
     runbook_fallback: dict,
+    provider_label: str = "fallback",
 ) -> None:
     """Write RCA back to DynamoDB and clear the ai_pending flag."""
     used_ai    = ai is not None
@@ -1011,7 +1149,7 @@ def _update_incident_rca(
                     "summary":             summary,
                 },
                 ":ai":      used_ai,
-                ":src":     "kserve-ollama" if used_ai else "fallback",
+                ":src":     provider_label if used_ai else "fallback",
                 ":pending": False,
             },
         )
@@ -1229,17 +1367,22 @@ def fire_demo_incident(payload: dict):
     def _bg():
         print(f"[rca-bg] fetching log context for {service}…", file=sys.stderr)
         log_context = _fetch_log_context(service)
+        code_ctx    = _get_code_context(service, severity)
 
-        print(f"[rca-bg] calling KServe at {KSERVE_ENDPOINT} model={KSERVE_MODEL}", file=sys.stderr)
-        ai = _call_kserve(service, severity, log_context)
+        print(f"[rca-bg] calling LLM chain for {service} {severity}", file=sys.stderr)
+        ai, provider_label = _call_llm_chain(service, severity, log_context, code_ctx)
 
         if ai:
-            print(f"[rca-bg] AI root_cause: {str(ai.get('root_cause',''))[:100]}", file=sys.stderr)
+            print(f"[rca-bg] {provider_label} root_cause: {str(ai.get('root_cause',''))[:100]}", file=sys.stderr)
         else:
-            print(f"[rca-bg] KServe unavailable — using fallback", file=sys.stderr)
+            print(f"[rca-bg] all providers failed — using fallback", file=sys.stderr)
 
-        _update_incident_rca(iid, ai, severity, service, rca_fallback, runbook_fallback)
-        print(f"[rca-bg] DynamoDB updated for {iid} (ai_generated={ai is not None})", file=sys.stderr)
+        _update_incident_rca(iid, ai, severity, service, rca_fallback, runbook_fallback, provider_label)
+        print(f"[rca-bg] DynamoDB updated for {iid} (provider={provider_label})", file=sys.stderr)
+
+        if severity in ("P1", "P2"):
+            root_cause = (ai or {}).get("root_cause", rca_fallback)
+            _notify_slack(iid, title, service, severity, root_cause, provider_label)
 
     threading.Thread(target=_bg, daemon=True).start()
 

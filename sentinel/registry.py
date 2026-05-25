@@ -80,6 +80,12 @@ def _build_llm(cfg: dict) -> BaseLLMProvider:
     if provider == "anthropic":
         from sentinel.providers.llm.anthropic import AnthropicProvider
         return AnthropicProvider(api_key=cfg["api_key"], model=cfg.get("model", "claude-haiku-4-5-20251001"))
+    if provider == "gemini":
+        from sentinel.providers.llm.gemini import GeminiProvider
+        return GeminiProvider(api_key=cfg["api_key"], model=cfg.get("model", "gemini-1.5-flash"))
+    if provider == "fallback":
+        from sentinel.providers.llm.fallback import FallbackLLMProvider
+        return FallbackLLMProvider([_build_llm(p) for p in cfg["providers"]])
     raise ValueError(f"Unknown LLM provider: {provider!r}")
 
 
