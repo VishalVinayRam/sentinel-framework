@@ -1302,61 +1302,84 @@ def integrations_status():
     return status
 
 
-@app.post("/api/demo/fire")
-def fire_demo_incident(payload: dict):
-    """
-    Fire a demo incident. Writes to DynamoDB immediately with a placeholder,
-    then calls KServe (Ollama) in a background thread.
+_RCA_FALLBACKS = {
+    "P1": (
+        "Database connection pool exhausted — full-table scans on an un-indexed column held row locks "
+        "for 30+ seconds, cascading into timeout failures across all downstream services.",
+        {"step1": "Scale read replicas immediately", "step2": "Kill long-running queries on primary",
+         "step3": "Add missing index (CREATE INDEX CONCURRENTLY)", "step4": "Drain and restart connection pool"},
+    ),
+    "P2": (
+        "Memory leak in the token refresh cache — LRU eviction not triggering after a TTL config change. "
+        "Cache grew from 200 MB to 1.8 GB over 6 hours until OOM-kill.",
+        {"step1": "Restart affected pods to clear cache", "step2": "Revert cache TTL to previous value",
+         "step3": "Deploy LRU eviction fix", "step4": "Add memory usage alert"},
+    ),
+    "P3": (
+        "Upstream 429 rate-limiting — a batch job started sending requests without backoff and "
+        "saturated the API's request quota.",
+        {"step1": "Throttle batch job to 10 req/s", "step2": "Add exponential backoff with jitter",
+         "step3": "Coordinate rate-limit increase with upstream team"},
+    ),
+    "P4": (
+        "Verbose DEBUG logging left enabled after a hotfix. No user impact, but log-ingestion costs "
+        "will spike at month end.",
+        {"step1": "Set LOG_LEVEL=INFO in env config", "step2": "Rolling restart affected pods",
+         "step3": "Add log-level lint to CI"},
+    ),
+}
 
-    Body: { "severity": "P1"|"P2"|"P3"|"P4", "service": "my-service" }
+
+def _create_and_analyze(
+    service: str,
+    severity: str,
+    title: str,
+    source: str = "api",
+    iid: Optional[str] = None,
+    extra_metadata: Optional[dict] = None,
+) -> dict:
+    """Write an incident to DynamoDB and spawn the RCA background thread.
+
+    Called by fire_demo_incident, receive_incident, and any future trigger path.
+    Returns the immediate response dict (incident_id, title, severity, service, ai_pending).
     """
-    severity = payload.get("severity", "P2")
-    service  = payload.get("service",  "demo-service")
-    iid      = str(uuid.uuid4())
+    iid      = iid or str(uuid.uuid4())
     now      = datetime.now(timezone.utc).isoformat()
-    title    = _make_title(service, severity)
+    sev      = severity.upper() if severity else "P3"
 
-    rca_fallback = {
-        "P1": "Database connection pool exhausted — full-table scans on an un-indexed column held row locks for 30+ seconds, cascading into timeout failures across all downstream services.",
-        "P2": "Memory leak in the token refresh cache — LRU eviction not triggering after a TTL config change. Cache grew from 200 MB to 1.8 GB over 6 hours until OOM-kill.",
-        "P3": "Upstream 429 rate-limiting — a batch job started sending requests without backoff and saturated the API's request quota.",
-        "P4": "Verbose DEBUG logging left enabled after a hotfix. No user impact, but log-ingestion costs will spike at month end.",
-    }.get(severity, "Root cause analysis in progress.")
+    rca_fallback, runbook_fallback = _RCA_FALLBACKS.get(sev, ("Root cause analysis in progress.", {}))
+    error_rate = Decimal("0.18") if sev == "P1" else Decimal("0.07") if sev == "P2" else Decimal("0.02")
 
-    runbook_fallback = {
-        "P1": {"step1": "Scale read replicas immediately", "step2": "Kill long-running queries on primary", "step3": "Add missing index (CREATE INDEX CONCURRENTLY)", "step4": "Drain and restart connection pool"},
-        "P2": {"step1": "Restart affected pods to clear cache", "step2": "Revert cache TTL to previous value", "step3": "Deploy LRU eviction fix", "step4": "Add memory usage alert"},
-        "P3": {"step1": "Throttle batch job to 10 req/s", "step2": "Add exponential backoff with jitter", "step3": "Coordinate rate-limit increase with upstream team"},
-        "P4": {"step1": "Set LOG_LEVEL=INFO in env config", "step2": "Rolling restart affected pods", "step3": "Add log-level lint to CI"},
-    }.get(severity, {})
-
-    error_rate = Decimal("0.18") if severity == "P1" else Decimal("0.07") if severity == "P2" else Decimal("0.02")
+    metadata = {"source": source, "fired_at": now, "ai_pending": True}
+    if extra_metadata:
+        metadata.update(extra_metadata)
 
     item = {
         "incident_id":  iid,
         "title":        title,
+        "service":      service,
         "service_name": service,
-        "severity":     severity,
+        "severity":     sev,
         "status":       "OPEN",
         "created_at":   now,
         "root_cause":   "⏳ AI analysis running — check back in ~30 s",
         "runbook":      {},
-        "code_context": _get_code_context(service, severity),
+        "code_context": _get_code_context(service, sev),
         "log_analysis": {
-            "severity":            severity,
-            "rule_severity":       severity,
-            "ml_severity":         severity,
-            "degradation_trend":   "worsening" if severity in ("P1", "P2") else "stable",
+            "severity":            sev,
+            "rule_severity":       sev,
+            "ml_severity":         sev,
+            "degradation_trend":   "worsening" if sev in ("P1", "P2") else "stable",
             "affected_components": [service],
             "log_sample_size":     0,
             "error_rate_in_sample": error_rate,
         },
         "impact_scope": {
             "error_rate_in_sample": error_rate,
-            "users_impacted_pct":  85 if severity == "P1" else 30 if severity == "P2" else 5,
+            "users_impacted_pct":  85 if sev == "P1" else 30 if sev == "P2" else 5,
             "summary":             "Analysis in progress…",
         },
-        "metadata": {"source": "demo", "fired_at": now, "ai_pending": True},
+        "metadata": metadata,
     }
 
     try:
@@ -1365,28 +1388,72 @@ def fire_demo_incident(payload: dict):
         raise HTTPException(status_code=500, detail=f"DynamoDB error: {e}")
 
     def _bg():
-        print(f"[rca-bg] fetching log context for {service}…", file=sys.stderr)
+        print(f"[rca-bg] {source} incident {iid} — {sev} {service}", file=sys.stderr)
         log_context = _fetch_log_context(service)
-        code_ctx    = _get_code_context(service, severity)
+        code_ctx    = _get_code_context(service, sev)
 
-        print(f"[rca-bg] calling LLM chain for {service} {severity}", file=sys.stderr)
-        ai, provider_label = _call_llm_chain(service, severity, log_context, code_ctx)
+        ai, provider_label = _call_llm_chain(service, sev, log_context, code_ctx)
 
         if ai:
-            print(f"[rca-bg] {provider_label} root_cause: {str(ai.get('root_cause',''))[:100]}", file=sys.stderr)
+            print(f"[rca-bg] {provider_label} — {str(ai.get('root_cause',''))[:100]}", file=sys.stderr)
         else:
             print(f"[rca-bg] all providers failed — using fallback", file=sys.stderr)
 
-        _update_incident_rca(iid, ai, severity, service, rca_fallback, runbook_fallback, provider_label)
-        print(f"[rca-bg] DynamoDB updated for {iid} (provider={provider_label})", file=sys.stderr)
+        _update_incident_rca(iid, ai, sev, service, rca_fallback, runbook_fallback, provider_label)
+        print(f"[rca-bg] updated {iid} (provider={provider_label})", file=sys.stderr)
 
-        if severity in ("P1", "P2"):
+        if sev in ("P1", "P2"):
             root_cause = (ai or {}).get("root_cause", rca_fallback)
-            _notify_slack(iid, title, service, severity, root_cause, provider_label)
+            _notify_slack(iid, title, service, sev, root_cause, provider_label)
 
     threading.Thread(target=_bg, daemon=True).start()
 
-    return {"incident_id": iid, "title": title, "severity": severity, "service": service, "ai_pending": True}
+    return {"incident_id": iid, "title": title, "severity": sev, "service": service, "ai_pending": True}
+
+
+# ── Incident receiver (external webhook / alarm sources) ──────────────────────
+
+@app.post("/api/incidents/receive")
+def receive_incident(payload: dict):
+    """
+    General-purpose incident receiver — accepts webhooks from CloudWatch, Grafana,
+    Loki AlertManager, PagerDuty, or any custom source.
+
+    Minimum payload:
+        { "service": "auth-service", "severity": "P1", "title": "DB pool exhausted" }
+
+    Optional fields:
+        source      — "cloudwatch" | "grafana" | "loki" | "pagerduty" | ... (default: "webhook")
+        incident_id — pre-assigned ID (idempotent re-delivery)
+        description — appended to title in metadata
+        labels      — dict of arbitrary key/value labels stored in metadata
+
+    Response (immediate, before RCA completes):
+        { "incident_id": "...", "title": "...", "severity": "P1",
+          "service": "...", "ai_pending": true }
+    """
+    service = payload.get("service") or payload.get("service_name") or "unknown-service"
+    severity = (payload.get("severity") or "P3").upper()
+    title    = payload.get("title") or payload.get("description") or _make_title(service, severity)
+    source   = payload.get("source") or "webhook"
+    iid      = payload.get("incident_id") or None
+
+    extra = {}
+    if payload.get("labels"):
+        extra["labels"] = payload["labels"]
+    if payload.get("description") and payload.get("title"):
+        extra["description"] = payload["description"]
+
+    return _create_and_analyze(service, severity, title, source=source, iid=iid, extra_metadata=extra or None)
+
+
+@app.post("/api/demo/fire")
+def fire_demo_incident(payload: dict):
+    """Fire a demo incident. Body: { "severity": "P1"|..., "service": "my-service" }"""
+    severity = payload.get("severity", "P2")
+    service  = payload.get("service",  "demo-service")
+    title    = payload.get("title") or _make_title(service, severity)
+    return _create_and_analyze(service, severity, title, source="demo")
 
 
 @app.post("/api/incidents/{incident_id}/resolve")

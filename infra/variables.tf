@@ -53,3 +53,9 @@ variable "github_webhook_secret" {
   sensitive   = true
   default     = ""
 }
+
+variable "sentinel_dashboard_url" {
+  description = "URL of the Sentinel dashboard API (e.g. https://sentinel.internal). CloudWatch Lambda forwards incidents here."
+  type        = string
+  default     = ""
+}

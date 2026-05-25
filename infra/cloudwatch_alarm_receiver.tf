@@ -22,9 +22,10 @@ resource "aws_lambda_function" "cw_alarm_receiver" {
 
   environment {
     variables = {
-      INCIDENTS_TABLE = "${var.project}-incidents"
-      EVENTS_STREAM   = "${var.project}-events"
-      AWS_REGION      = var.aws_region
+      INCIDENTS_TABLE        = "${var.project}-incidents"
+      EVENTS_STREAM          = "${var.project}-events"
+      AWS_REGION             = var.aws_region
+      SENTINEL_DASHBOARD_URL = var.sentinel_dashboard_url
     }
   }
 
