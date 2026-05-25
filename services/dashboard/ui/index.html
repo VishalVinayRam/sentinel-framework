@@ -1,29 +1,45 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sentinel — Incident Dashboard</title>
+  <title>Sentinel — Incident Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       darkMode: 'class',
       theme: {
         extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
           colors: {
-            sentinel: { 500: '#8b5cf6', 600: '#7c3aed', 700: '#6d28d9' }
+            brand: { 50:'#f5f3ff', 100:'#ede9fe', 500:'#8b5cf6', 600:'#7c3aed', 700:'#6d28d9', 800:'#5b21b6', 900:'#4c1d95' },
+            surface: { 0:'#0d0e14', 1:'#13151e', 2:'#1a1d28', 3:'#212435', border:'#2a2d3e' },
           }
         }
       }
     }
   </script>
   <style>
-    body { font-family: 'Inter', system-ui, sans-serif; }
-    .fade-in { animation: fadeIn 0.25s ease-in; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-    .pulse-dot { animation: pulse 2s cubic-bezier(0.4,0,0.6,1) infinite; }
-    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
-    ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: #1e293b; } ::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #0d0e14; color: #e2e4ef; margin: 0; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a2d3e; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3a3e54; }
+
+    /* Animations */
+    @keyframes fadeSlideIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .fade-in { animation: fadeSlideIn .2s ease-out; }
+    .pulse-dot { animation: pulse 2s ease-in-out infinite; }
+    .spin { animation: spin .8s linear infinite; }
+
+    /* Severity */
     .sev-P1 { background:#ef4444; color:#fff; }
     .sev-P2 { background:#f97316; color:#fff; }
     .sev-P3 { background:#eab308; color:#000; }
@@ -32,119 +48,242 @@
     .dot-P2 { background:#f97316; }
     .dot-P3 { background:#eab308; }
     .dot-P4 { background:#22c55e; }
-    .ring-open  { border-left: 3px solid #ef4444; }
-    .ring-resolved { border-left: 3px solid #22c55e; }
+
+    /* Status pills */
+    .status-OPEN         { background:#ef444420; color:#f87171; border:1px solid #ef444440; }
+    .status-ACKNOWLEDGED { background:#f9731620; color:#fb923c; border:1px solid #f9731640; }
+    .status-RESOLVED     { background:#22c55e20; color:#4ade80; border:1px solid #22c55e40; }
+
+    /* Nav */
+    .nav-item { display:flex; align-items:center; gap:10px; padding:8px 12px; border-radius:8px; font-size:13px; font-weight:500; color:#8b8fa8; cursor:pointer; transition:all .15s; width:100%; text-align:left; border:none; background:none; }
+    .nav-item:hover { background:#1a1d28; color:#e2e4ef; }
+    .nav-item.active { background:#1a1d28; color:#fff; }
+    .nav-item.active .nav-icon { color:#8b5cf6; }
+    .nav-icon { width:16px; height:16px; flex-shrink:0; }
+
+    /* Cards */
+    .card { background:#13151e; border:1px solid #2a2d3e; border-radius:12px; }
+    .card-sm { background:#1a1d28; border:1px solid #2a2d3e; border-radius:8px; }
+
+    /* Incident row */
+    .inc-row { display:grid; align-items:center; border-bottom:1px solid #1a1d28; transition:background .1s; cursor:pointer; padding:0 20px; height:56px; }
+    .inc-row:hover { background:#13151e; }
+    .inc-row.active { background:#1a1d28; border-left:3px solid #7c3aed; }
+    .inc-row:last-child { border-bottom:none; }
+
+    /* Timeline */
+    .tl-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; margin-top:4px; }
+    .tl-line { width:2px; background:#2a2d3e; flex:1; min-height:20px; margin:4px auto 0; }
+
+    /* Input / select */
+    .input { background:#1a1d28; border:1px solid #2a2d3e; border-radius:8px; color:#e2e4ef; font-size:13px; padding:7px 12px; outline:none; transition:border-color .15s; }
+    .input:focus { border-color:#7c3aed; }
+
+    /* Btn */
+    .btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; border:none; transition:all .15s; }
+    .btn-primary { background:#7c3aed; color:#fff; }
+    .btn-primary:hover { background:#6d28d9; }
+    .btn-ghost { background:transparent; border:1px solid #2a2d3e; color:#8b8fa8; }
+    .btn-ghost:hover { border-color:#3a3e54; color:#e2e4ef; background:#1a1d28; }
+    .btn-danger { background:#ef444420; border:1px solid #ef444440; color:#f87171; }
+    .btn-danger:hover { background:#ef444430; }
+    .btn-success { background:#22c55e20; border:1px solid #22c55e40; color:#4ade80; }
+    .btn-success:hover { background:#22c55e30; }
+
+    /* Metric card */
+    .metric-card { background:#13151e; border:1px solid #2a2d3e; border-radius:12px; padding:20px; }
+    .metric-value { font-size:28px; font-weight:700; line-height:1; margin:8px 0 4px; }
+
+    /* Code / mono */
+    .mono { font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace; }
+
+    /* Progress bar */
+    .progress-bar { height:5px; border-radius:3px; background:#1a1d28; overflow:hidden; }
+    .progress-fill { height:100%; border-radius:3px; transition:width .5s ease; }
+
+    /* Table */
+    .data-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .data-table th { text-align:left; padding:10px 16px; font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:#5a5e78; border-bottom:1px solid #1a1d28; }
+    .data-table td { padding:12px 16px; border-bottom:1px solid #1a1d28; vertical-align:middle; }
+    .data-table tr:last-child td { border-bottom:none; }
+    .data-table tr:hover td { background:#13151e; }
+
+    /* Runbook step */
+    .runbook-step { display:flex; gap:12px; padding:10px 0; border-bottom:1px solid #1a1d28; }
+    .runbook-step:last-child { border-bottom:none; }
+    .step-num { width:22px; height:22px; border-radius:50%; background:#7c3aed20; border:1px solid #7c3aed40; color:#a78bfa; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+
+    /* Severity bar */
+    .sev-bar { display:flex; align-items:center; gap:10px; }
+
+    /* Integration badge */
+    .int-badge { display:inline-flex; align-items:center; gap:5px; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:500; }
+    .int-up   { background:#22c55e15; border:1px solid #22c55e30; color:#4ade80; }
+    .int-down { background:#ef444415; border:1px solid #ef444430; color:#f87171; }
+
+    /* AI badge */
+    .ai-badge { background:#7c3aed20; border:1px solid #7c3aed40; color:#a78bfa; padding:2px 8px; border-radius:20px; font-size:10px; font-weight:600; letter-spacing:.04em; }
+
+    /* Search */
+    .search-wrap { position:relative; }
+    .search-wrap svg { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#5a5e78; width:14px; height:14px; }
+    .search-wrap input { padding-left:32px; }
+
+    /* Tooltip */
+    [title] { cursor:default; }
+
+    /* Empty state */
+    .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:60px 20px; color:#5a5e78; }
+    .empty-state svg { width:48px; height:48px; opacity:.4; }
+    .empty-state p { font-size:14px; text-align:center; }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-200 min-h-screen flex">
+<body class="flex h-screen overflow-hidden">
 
-<!-- ── Sidebar ────────────────────────────────────────────────────────── -->
-<aside class="w-56 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0">
-  <div class="px-5 py-5 flex items-center gap-2.5 border-b border-slate-800">
-    <div class="w-7 h-7 rounded-lg bg-sentinel-600 flex items-center justify-center text-white font-bold text-sm">S</div>
-    <span class="font-semibold text-white text-sm tracking-wide">Sentinel</span>
-    <span class="ml-auto text-[10px] bg-sentinel-700 text-violet-200 rounded px-1.5 py-0.5">v0.1</span>
+<!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
+<aside style="width:220px;background:#0d0e14;border-right:1px solid #1a1d28;display:flex;flex-direction:column;flex-shrink:0;">
+
+  <!-- Logo -->
+  <div style="padding:18px 16px 14px;border-bottom:1px solid #1a1d28;display:flex;align-items:center;gap:10px;">
+    <div style="width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#7c3aed,#a855f7);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff;flex-shrink:0;">S</div>
+    <div>
+      <div style="font-weight:700;font-size:14px;color:#fff;line-height:1.2;">Sentinel</div>
+      <div style="font-size:10px;color:#5a5e78;line-height:1;">Incident Intelligence</div>
+    </div>
+    <div style="margin-left:auto;font-size:9px;background:#7c3aed30;color:#a78bfa;border:1px solid #7c3aed40;border-radius:4px;padding:2px 5px;font-weight:600;">v0.2</div>
   </div>
-  <nav class="p-3 flex-1 space-y-1">
-    <button onclick="setView('overview')" id="nav-overview" class="nav-btn w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
-      Overview
+
+  <!-- Nav -->
+  <nav style="padding:12px 8px;flex:1;">
+    <div style="font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#3a3e54;padding:0 12px;margin-bottom:6px;">Monitor</div>
+    <button onclick="setView('overview')" id="nav-overview" class="nav-item active">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Dashboard
     </button>
-    <button onclick="setView('incidents')" id="nav-incidents" class="nav-btn w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+    <button onclick="setView('incidents')" id="nav-incidents" class="nav-item">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
       Incidents
-      <span id="badge-open" class="ml-auto bg-red-600 text-white text-[10px] font-bold rounded px-1.5 py-0.5 hidden">0</span>
+      <span id="badge-open" class="hidden ml-auto text-[10px] font-bold bg-red-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center"></span>
     </button>
-    <button onclick="setView('validations')" id="nav-validations" class="nav-btn w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    <button onclick="setView('validations')" id="nav-validations" class="nav-item">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
       Validation Log
     </button>
-    <button onclick="setView('demo')" id="nav-demo" class="nav-btn w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
-      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+
+    <div style="font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#3a3e54;padding:0 12px;margin:16px 0 6px;">Tools</div>
+    <button onclick="setView('integrations')" id="nav-integrations" class="nav-item">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+      Integrations
+    </button>
+    <button onclick="setView('demo')" id="nav-demo" class="nav-item">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z"/></svg>
       Demo Mode
     </button>
   </nav>
-  <div class="p-3 border-t border-slate-800">
-    <div class="flex items-center gap-2 px-2">
-      <div id="status-dot" class="w-2 h-2 rounded-full bg-green-400 pulse-dot"></div>
-      <span class="text-xs text-slate-400">Floci connected</span>
+
+  <!-- Status footer -->
+  <div style="padding:12px 16px;border-top:1px solid #1a1d28;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <div id="status-dot" class="pulse-dot" style="width:7px;height:7px;border-radius:50%;background:#22c55e;flex-shrink:0;"></div>
+      <span style="font-size:11px;color:#5a5e78;">Floci · us-east-1</span>
     </div>
-    <p class="mt-2 px-2 text-[10px] text-slate-600">Auto-refresh 15s</p>
+    <div style="font-size:10px;color:#3a3e54;display:flex;align-items:center;justify-content:space-between;">
+      <span id="last-updated-mini"></span>
+      <span>Auto ⟳ 15s</span>
+    </div>
   </div>
 </aside>
 
 <!-- ── Main ───────────────────────────────────────────────────────────── -->
-<main class="flex-1 flex flex-col overflow-hidden">
+<main style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
 
-  <!-- Header -->
-  <header class="h-14 border-b border-slate-800 px-6 flex items-center justify-between shrink-0">
-    <div>
-      <h1 id="page-title" class="text-base font-semibold text-white">Overview</h1>
-      <p id="page-sub" class="text-xs text-slate-500">Sentinel incident intelligence</p>
-    </div>
-    <div class="flex items-center gap-3">
-      <span id="last-updated" class="text-xs text-slate-500"></span>
-      <button onclick="refresh()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg px-3 py-1.5 transition-colors">↻ Refresh</button>
-    </div>
+  <!-- Top bar -->
+  <header style="height:52px;border-bottom:1px solid #1a1d28;padding:0 24px;display:flex;align-items:center;gap:16px;flex-shrink:0;background:#0d0e14;">
+    <h1 id="page-title" style="font-size:15px;font-weight:600;color:#fff;margin:0;"></h1>
+    <div id="page-sub" style="font-size:12px;color:#5a5e78;"></div>
+    <div style="flex:1;"></div>
+    <button onclick="refresh()" class="btn btn-ghost" style="padding:5px 10px;font-size:12px;">
+      <svg id="refresh-icon" style="width:13px;height:13px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+      Refresh
+    </button>
+    <!-- User avatar -->
+    <div style="width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#a855f7);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;cursor:pointer;" title="vishalvinayram.tally@gmail.com">V</div>
   </header>
 
   <!-- Content -->
-  <div class="flex-1 overflow-auto p-6">
+  <div id="content" style="flex:1;overflow:auto;padding:24px;" class="fade-in">
 
-    <!-- ── OVERVIEW ──────────────────────────────────────────────────── -->
-    <div id="view-overview" class="space-y-6 fade-in">
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
-          <p class="text-xs text-slate-500 uppercase tracking-wider">Total Incidents</p>
-          <p id="stat-total" class="text-3xl font-bold text-white mt-1">—</p>
-          <p class="text-xs text-slate-500 mt-1">all time</p>
+    <!-- ═══ OVERVIEW ═══════════════════════════════════════════════════════ -->
+    <div id="view-overview">
+
+      <!-- Metric cards -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;">
+        <div class="metric-card">
+          <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;">Open Incidents</div>
+          <div id="stat-open" class="metric-value" style="color:#f87171;">—</div>
+          <div style="font-size:11px;color:#5a5e78;">requires attention</div>
         </div>
-        <div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
-          <p class="text-xs text-slate-500 uppercase tracking-wider">Open Right Now</p>
-          <p id="stat-open" class="text-3xl font-bold text-red-400 mt-1">—</p>
-          <p class="text-xs text-slate-500 mt-1">needs attention</p>
+        <div class="metric-card">
+          <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;">Critical (P1/P2)</div>
+          <div id="stat-critical" class="metric-value" style="color:#fb923c;">—</div>
+          <div style="font-size:11px;color:#5a5e78;">high severity open</div>
         </div>
-        <div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
-          <p class="text-xs text-slate-500 uppercase tracking-wider">False Positive Rate</p>
-          <p id="stat-fp" class="text-3xl font-bold text-yellow-400 mt-1">—</p>
-          <p class="text-xs text-slate-500 mt-1">validated alerts</p>
+        <div class="metric-card">
+          <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;">False Positive Rate</div>
+          <div id="stat-fp" class="metric-value" style="color:#facc15;">—</div>
+          <div style="font-size:11px;color:#5a5e78;">of validated alerts</div>
         </div>
-        <div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
-          <p class="text-xs text-slate-500 uppercase tracking-wider">Active P1 / P2</p>
-          <p id="stat-critical" class="text-3xl font-bold text-orange-400 mt-1">—</p>
-          <p class="text-xs text-slate-500 mt-1">critical severity</p>
+        <div class="metric-card">
+          <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;">Avg MTTR</div>
+          <div id="stat-mttr" class="metric-value" style="color:#a78bfa;">—</div>
+          <div style="font-size:11px;color:#5a5e78;">minutes to resolve</div>
         </div>
       </div>
 
-      <!-- Severity breakdown -->
-      <div class="bg-slate-900 rounded-xl border border-slate-800 p-5">
-        <h2 class="text-sm font-semibold text-white mb-4">Open Incidents by Severity</h2>
-        <div class="space-y-3" id="sev-bars"></div>
-      </div>
+      <div style="display:grid;grid-template-columns:1fr 320px;gap:16px;">
 
-      <!-- Recent incidents table -->
-      <div class="bg-slate-900 rounded-xl border border-slate-800 p-5">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-sm font-semibold text-white">Recent Incidents</h2>
-          <button onclick="setView('incidents')" class="text-xs text-violet-400 hover:text-violet-300">View all →</button>
+        <!-- Recent incidents table -->
+        <div class="card" style="overflow:hidden;">
+          <div style="padding:16px 20px;border-bottom:1px solid #1a1d28;display:flex;align-items:center;justify-content:space-between;">
+            <div style="font-size:13px;font-weight:600;color:#fff;">Recent Incidents</div>
+            <button onclick="setView('incidents')" class="btn btn-ghost" style="padding:4px 10px;font-size:11px;">View all →</button>
+          </div>
+          <div id="recent-incidents"></div>
         </div>
-        <div id="recent-table"></div>
+
+        <!-- Sidebar: severity breakdown + system status -->
+        <div style="display:flex;flex-direction:column;gap:16px;">
+          <div class="card" style="padding:16px 20px;">
+            <div style="font-size:12px;font-weight:600;color:#fff;margin-bottom:14px;">By Severity (open)</div>
+            <div id="sev-bars" style="display:flex;flex-direction:column;gap:10px;"></div>
+          </div>
+          <div class="card" style="padding:16px 20px;">
+            <div style="font-size:12px;font-weight:600;color:#fff;margin-bottom:14px;">System Status</div>
+            <div id="system-status" style="display:flex;flex-direction:column;gap:8px;"></div>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- ── INCIDENTS ─────────────────────────────────────────────────── -->
-    <div id="view-incidents" class="hidden h-full">
-      <div class="flex gap-4 h-full">
-        <!-- List -->
-        <div class="w-96 shrink-0 flex flex-col gap-3">
-          <!-- Filters -->
-          <div class="flex gap-2">
-            <select id="filter-status" onchange="applyFilters()" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300">
+    <!-- ═══ INCIDENTS ══════════════════════════════════════════════════════ -->
+    <div id="view-incidents" class="hidden" style="height:100%;display:flex;gap:0;margin:-24px;overflow:hidden;">
+
+      <!-- Left: incident list -->
+      <div style="width:420px;flex-shrink:0;border-right:1px solid #1a1d28;display:flex;flex-direction:column;">
+        <!-- Filters -->
+        <div style="padding:12px 16px;border-bottom:1px solid #1a1d28;display:flex;flex-direction:column;gap:8px;background:#0d0e14;">
+          <div class="search-wrap">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 15.803a7.5 7.5 0 0010.607 10.607z"/></svg>
+            <input id="search-input" oninput="applyFilters()" class="input" style="width:100%;" placeholder="Search incidents…" />
+          </div>
+          <div style="display:flex;gap:6px;">
+            <select id="filter-status" onchange="applyFilters()" class="input" style="flex:1;">
               <option value="">All statuses</option>
               <option value="OPEN">Open</option>
+              <option value="ACKNOWLEDGED">Acknowledged</option>
               <option value="RESOLVED">Resolved</option>
             </select>
-            <select id="filter-sev" onchange="applyFilters()" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-300">
+            <select id="filter-sev" onchange="applyFilters()" class="input" style="flex:1;">
               <option value="">All severities</option>
               <option value="P1">P1 Critical</option>
               <option value="P2">P2 Major</option>
@@ -152,77 +291,217 @@
               <option value="P4">P4 Info</option>
             </select>
           </div>
-          <div id="incident-list" class="space-y-2 overflow-auto flex-1 pr-1"></div>
         </div>
-        <!-- Detail panel -->
-        <div id="detail-panel" class="flex-1 bg-slate-900 rounded-xl border border-slate-800 overflow-auto">
-          <div class="flex items-center justify-center h-full text-slate-600 text-sm">
-            ← Select an incident to view RCA
-          </div>
+        <!-- List -->
+        <div id="incident-list" style="flex:1;overflow:auto;"></div>
+      </div>
+
+      <!-- Right: detail -->
+      <div id="detail-panel" style="flex:1;overflow:auto;">
+        <div class="empty-state">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+          <p>Select an incident to see full RCA and runbook</p>
         </div>
       </div>
     </div>
 
-    <!-- ── VALIDATIONS ───────────────────────────────────────────────── -->
-    <div id="view-validations" class="hidden fade-in">
-      <div class="bg-slate-900 rounded-xl border border-slate-800 p-5">
-        <h2 class="text-sm font-semibold text-white mb-4">Alert Validation Log</h2>
-        <p class="text-xs text-slate-500 mb-4">Every alert passes through 3-signal validation before being declared a real incident.</p>
+    <!-- ═══ VALIDATIONS ════════════════════════════════════════════════════ -->
+    <div id="view-validations" class="hidden">
+      <div class="card" style="overflow:hidden;">
+        <div style="padding:16px 20px;border-bottom:1px solid #1a1d28;">
+          <div style="font-size:13px;font-weight:600;color:#fff;">Alert Validation Log</div>
+          <div style="font-size:11px;color:#5a5e78;margin-top:3px;">Every alert is validated against 3 independent signals before being declared a real incident.</div>
+        </div>
         <div id="validation-table"></div>
       </div>
     </div>
 
-    <!-- ── DEMO MODE ─────────────────────────────────────────────────── -->
-    <div id="view-demo" class="hidden fade-in max-w-2xl">
-      <div class="bg-slate-900 rounded-xl border border-slate-800 p-6 mb-4">
-        <h2 class="text-sm font-semibold text-white mb-1">Demo Mode</h2>
-        <p class="text-xs text-slate-400 mb-6">Fire synthetic incidents with realistic RCA, runbooks, and log analysis — instantly visible in the Incidents view.</p>
+    <!-- ═══ INTEGRATIONS ═══════════════════════════════════════════════════ -->
+    <div id="view-integrations" class="hidden">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px;">
 
-        <div class="space-y-3" id="demo-services">
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="text-xs text-slate-400 mb-1 block">Service name</label>
-              <input id="demo-service" value="payments-service" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+        <!-- KServe / Ollama -->
+        <div class="card" style="padding:20px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <div style="width:36px;height:36px;border-radius:8px;background:#7c3aed20;border:1px solid #7c3aed40;display:flex;align-items:center;justify-content:center;">
+              <svg style="width:18px;height:18px;color:#a78bfa;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1 1 .03 2.798-1.414 2.798H4.212c-1.444 0-2.414-1.798-1.414-2.798L4.2 15.3"/></svg>
             </div>
             <div>
-              <label class="text-xs text-slate-400 mb-1 block">Severity</label>
-              <select id="demo-sev" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
-                <option value="P1">P1 — Critical (full outage)</option>
-                <option value="P2" selected>P2 — Major degradation</option>
-                <option value="P3">P3 — Minor issue</option>
-                <option value="P4">P4 — Informational</option>
-              </select>
+              <div style="font-size:13px;font-weight:600;color:#fff;">AI Engine (KServe + Ollama)</div>
+              <div style="font-size:11px;color:#5a5e78;">Local LLM for RCA generation</div>
             </div>
+            <span id="int-kserve-badge" class="int-badge int-down ml-auto">checking…</span>
           </div>
-          <button onclick="fireDemoIncident()" id="fire-btn" class="w-full bg-sentinel-600 hover:bg-sentinel-700 text-white rounded-lg py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-            Fire Incident
-          </button>
+          <div style="font-size:12px;color:#5a5e78;line-height:1.6;">
+            <div>Endpoint: <span id="int-kserve-url" class="mono" style="color:#a78bfa;font-size:11px;"></span></div>
+            <div>Model: <span id="int-kserve-model" class="mono" style="color:#a78bfa;font-size:11px;"></span></div>
+          </div>
+          <div style="margin-top:12px;padding:10px;background:#1a1d28;border-radius:8px;font-size:11px;color:#5a5e78;">
+            Start with: <code class="mono" style="color:#a78bfa;">./setup_demo.sh</code> — auto-starts Ollama + bridge on port 8081
+          </div>
         </div>
 
-        <div id="demo-result" class="hidden mt-4 p-3 bg-slate-800 rounded-lg text-xs font-mono text-green-400"></div>
+        <!-- Loki -->
+        <div class="card" style="padding:20px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <div style="width:36px;height:36px;border-radius:8px;background:#f9731620;border:1px solid #f9731640;display:flex;align-items:center;justify-content:center;">
+              <svg style="width:18px;height:18px;color:#fb923c;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/></svg>
+            </div>
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#fff;">Grafana Loki</div>
+              <div style="font-size:11px;color:#5a5e78;">Log aggregation source</div>
+            </div>
+            <span id="int-loki-badge" class="int-badge int-down ml-auto">checking…</span>
+          </div>
+          <div style="font-size:12px;color:#5a5e78;line-height:1.8;">
+            <div>Set <code class="mono" style="color:#a78bfa;font-size:11px;">LOKI_URL=http://loki:3100</code></div>
+            <div>Optional: <code class="mono" style="color:#a78bfa;font-size:11px;">LOKI_TENANT_ID</code>, <code class="mono" style="color:#a78bfa;font-size:11px;">LOKI_USER</code></div>
+          </div>
+          <div style="margin-top:12px;padding:10px;background:#1a1d28;border-radius:8px;font-size:11px;color:#5a5e78;">
+            Queries <code class="mono" style="color:#a78bfa;">/loki/api/v1/query_range</code> and feeds logs into the LLM RCA prompt automatically.
+          </div>
+        </div>
+
+        <!-- CloudWatch -->
+        <div class="card" style="padding:20px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <div style="width:36px;height:36px;border-radius:8px;background:#22c55e20;border:1px solid #22c55e40;display:flex;align-items:center;justify-content:center;">
+              <svg style="width:18px;height:18px;color:#4ade80;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"/></svg>
+            </div>
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#fff;">AWS CloudWatch Logs</div>
+              <div style="font-size:11px;color:#5a5e78;">CloudWatch Logs Insights</div>
+            </div>
+            <span class="int-badge int-down" style="margin-left:auto;">real AWS only</span>
+          </div>
+          <div style="font-size:12px;color:#5a5e78;line-height:1.8;">
+            <div>Log group prefix: <code class="mono" style="color:#a78bfa;font-size:11px;">/ecs/{service}</code></div>
+            <div>Set <code class="mono" style="color:#a78bfa;font-size:11px;">CLOUDWATCH_LOG_GROUP_PREFIX</code></div>
+          </div>
+          <div style="margin-top:12px;padding:10px;background:#1a1d28;border-radius:8px;font-size:11px;color:#5a5e78;">
+            Used as fallback when Loki is not configured. Requires <code class="mono" style="color:#a78bfa;">logs:StartQuery</code> IAM permission.
+          </div>
+        </div>
+
+        <!-- Floci -->
+        <div class="card" style="padding:20px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <div style="width:36px;height:36px;border-radius:8px;background:#facc1520;border:1px solid #facc1540;display:flex;align-items:center;justify-content:center;">
+              <svg style="width:18px;height:18px;color:#fde047;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125"/></svg>
+            </div>
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#fff;">Floci (Local AWS)</div>
+              <div style="font-size:11px;color:#5a5e78;">DynamoDB · Kinesis · SQS</div>
+            </div>
+            <span id="int-floci-badge" class="int-badge int-down ml-auto">checking…</span>
+          </div>
+          <div style="font-size:12px;color:#5a5e78;line-height:1.8;">
+            <div>Endpoint: <code class="mono" style="color:#a78bfa;font-size:11px;">http://localhost:4566</code></div>
+            <div>Tables: incidents · validation · pr-reviews</div>
+          </div>
+          <div style="margin-top:12px;padding:10px;background:#1a1d28;border-radius:8px;font-size:11px;color:#5a5e78;">
+            Emulates DynamoDB, Kinesis, and SQS locally. Start with <code class="mono" style="color:#a78bfa;">./setup_demo.sh</code>.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ═══ DEMO MODE ══════════════════════════════════════════════════════ -->
+    <div id="view-demo" class="hidden" style="max-width:760px;">
+
+      <div class="card" style="padding:24px;margin-bottom:16px;">
+        <div style="font-size:15px;font-weight:700;color:#fff;margin-bottom:4px;">Fire a Demo Incident</div>
+        <div style="font-size:12px;color:#5a5e78;margin-bottom:20px;">Generates a realistic incident with AI-powered RCA in ~30 seconds. Instantly visible in the Incidents view.</div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div>
+            <label style="font-size:11px;font-weight:600;color:#8b8fa8;display:block;margin-bottom:6px;">Service</label>
+            <select id="demo-service" class="input" style="width:100%;">
+              <option value="auth-service">auth-service</option>
+              <option value="payments-service">payments-service</option>
+              <option value="search-api">search-api</option>
+              <option value="notification-service">notification-service</option>
+              <option value="worker-service">worker-service</option>
+              <option value="api-gateway">api-gateway</option>
+              <option value="data-pipeline">data-pipeline</option>
+              <option value="ml-inference">ml-inference</option>
+              <option value="user-service">user-service</option>
+              <option value="inventory-service">inventory-service</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;color:#8b8fa8;display:block;margin-bottom:6px;">Severity</label>
+            <select id="demo-sev" class="input" style="width:100%;">
+              <option value="P1">P1 — Critical (full outage)</option>
+              <option value="P2" selected>P2 — Major degradation</option>
+              <option value="P3">P3 — Minor / elevated errors</option>
+              <option value="P4">P4 — Informational / cost</option>
+            </select>
+          </div>
+        </div>
+
+        <button onclick="fireDemoIncident()" id="fire-btn" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px;">
+          <svg style="width:15px;height:15px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+          Fire Incident
+        </button>
+
+        <div id="demo-result" class="hidden" style="margin-top:14px;padding:12px;background:#1a1d28;border-radius:8px;font-size:12px;font-family:monospace;"></div>
       </div>
 
-      <!-- Quick-fire presets -->
-      <div class="bg-slate-900 rounded-xl border border-slate-800 p-6">
-        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Quick presets</h3>
-        <div class="grid grid-cols-2 gap-3">
-          <button onclick="preset('auth-service','P1')" class="bg-red-950 border border-red-900 hover:bg-red-900 rounded-lg p-3 text-left transition-colors">
-            <div class="text-xs font-semibold text-red-400">P1 — Auth Service Down</div>
-            <div class="text-[11px] text-slate-500 mt-0.5">DB connection pool exhausted</div>
+      <!-- Presets -->
+      <div class="card" style="padding:20px;">
+        <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;margin-bottom:14px;">Quick Scenario Presets</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+
+          <button onclick="preset('auth-service','P1')" style="background:#ef444410;border:1px solid #ef444430;border-radius:10px;padding:14px;text-align:left;cursor:pointer;transition:all .15s;" onmouseover="this.style.background='#ef444420'" onmouseout="this.style.background='#ef444410'">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <span class="sev-P1" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">P1</span>
+              <span style="font-size:12px;font-weight:600;color:#fff;">Auth Service Down</span>
+            </div>
+            <div style="font-size:11px;color:#8b8fa8;">DB connection pool exhausted, 95% login failure</div>
           </button>
-          <button onclick="preset('payments-service','P2')" class="bg-orange-950 border border-orange-900 hover:bg-orange-900 rounded-lg p-3 text-left transition-colors">
-            <div class="text-xs font-semibold text-orange-400">P2 — Payment Degradation</div>
-            <div class="text-[11px] text-slate-500 mt-0.5">Memory leak in token cache</div>
+
+          <button onclick="preset('payments-service','P2')" style="background:#f9731610;border:1px solid #f9731630;border-radius:10px;padding:14px;text-align:left;cursor:pointer;transition:all .15s;" onmouseover="this.style.background='#f9731620'" onmouseout="this.style.background='#f9731610'">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <span class="sev-P2" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">P2</span>
+              <span style="font-size:12px;font-weight:600;color:#fff;">Payment Degradation</span>
+            </div>
+            <div style="font-size:11px;color:#8b8fa8;">Memory leak in token cache, OOM restart loop</div>
           </button>
-          <button onclick="preset('search-api','P3')" class="bg-yellow-950 border border-yellow-900 hover:bg-yellow-900 rounded-lg p-3 text-left transition-colors">
-            <div class="text-xs font-semibold text-yellow-400">P3 — Search Rate Limited</div>
-            <div class="text-[11px] text-slate-500 mt-0.5">Upstream 429s from batch job</div>
+
+          <button onclick="preset('search-api','P3')" style="background:#eab30810;border:1px solid #eab30830;border-radius:10px;padding:14px;text-align:left;cursor:pointer;transition:all .15s;" onmouseover="this.style.background='#eab30820'" onmouseout="this.style.background='#eab30810'">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <span class="sev-P3" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">P3</span>
+              <span style="font-size:12px;font-weight:600;color:#fff;">Search Rate Limited</span>
+            </div>
+            <div style="font-size:11px;color:#8b8fa8;">Elasticsearch 429s from bulk index rebuild</div>
           </button>
-          <button onclick="preset('worker-service','P4')" class="bg-green-950 border border-green-900 hover:bg-green-900 rounded-lg p-3 text-left transition-colors">
-            <div class="text-xs font-semibold text-green-400">P4 — Debug Log Noise</div>
-            <div class="text-[11px] text-slate-500 mt-0.5">Verbose logging left enabled</div>
+
+          <button onclick="preset('data-pipeline','P2')" style="background:#f9731610;border:1px solid #f9731630;border-radius:10px;padding:14px;text-align:left;cursor:pointer;transition:all .15s;" onmouseover="this.style.background='#f9731620'" onmouseout="this.style.background='#f9731610'">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <span class="sev-P2" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">P2</span>
+              <span style="font-size:12px;font-weight:600;color:#fff;">Data Pipeline Stalled</span>
+            </div>
+            <div style="font-size:11px;color:#8b8fa8;">Kinesis shard iterator expired, DLQ spike</div>
           </button>
+
+          <button onclick="preset('api-gateway','P1')" style="background:#ef444410;border:1px solid #ef444430;border-radius:10px;padding:14px;text-align:left;cursor:pointer;transition:all .15s;" onmouseover="this.style.background='#ef444420'" onmouseout="this.style.background='#ef444410'">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <span class="sev-P1" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">P1</span>
+              <span style="font-size:12px;font-weight:600;color:#fff;">API Gateway Cascade</span>
+            </div>
+            <div style="font-size:11px;color:#8b8fa8;">Circuit breaker open, upstream timeout cascade</div>
+          </button>
+
+          <button onclick="preset('worker-service','P4')" style="background:#22c55e10;border:1px solid #22c55e30;border-radius:10px;padding:14px;text-align:left;cursor:pointer;transition:all .15s;" onmouseover="this.style.background='#22c55e20'" onmouseout="this.style.background='#22c55e10'">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+              <span class="sev-P4" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;">P4</span>
+              <span style="font-size:12px;font-weight:600;color:#fff;">Debug Log Noise</span>
+            </div>
+            <div style="font-size:11px;color:#8b8fa8;">Verbose logging left on after hotfix, cost impact</div>
+          </button>
+
         </div>
       </div>
     </div>
@@ -231,49 +510,95 @@
 </main>
 
 <script>
-// ── State ───────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════════════════════════
 const API = '';
 let allIncidents = [];
 let selectedId   = null;
 let currentView  = 'overview';
 
-// ── Navigation ──────────────────────────────────────────────────────────────
-const VIEWS = { overview:'Overview', incidents:'Incidents', validations:'Validation Log', demo:'Demo Mode' };
-const SUBS  = { overview:'Sentinel incident intelligence', incidents:'Click any incident to view full RCA', validations:'Real vs. false-positive breakdown', demo:'Fire synthetic incidents for presentation' };
+// ═══════════════════════════════════════════════════════════════════════════
+// Navigation
+// ═══════════════════════════════════════════════════════════════════════════
+const VIEWS = {
+  overview:     { title: 'Dashboard',       sub: 'Incident intelligence at a glance' },
+  incidents:    { title: 'Incidents',        sub: 'Click an incident to view full RCA and runbook' },
+  validations:  { title: 'Validation Log',   sub: 'Every alert validated before creating an incident' },
+  integrations: { title: 'Integrations',     sub: 'Log sources, LLM engine, and data store status' },
+  demo:         { title: 'Demo Mode',        sub: 'Fire synthetic incidents with real AI analysis' },
+};
 
 function setView(v) {
   currentView = v;
+  const content = document.getElementById('content');
+  const isFullBleed = v === 'incidents';
+  content.style.padding = isFullBleed ? '0' : '24px';
+
   Object.keys(VIEWS).forEach(k => {
-    document.getElementById('view-' + k).classList.toggle('hidden', k !== v);
-    document.getElementById('view-' + k).classList.toggle('fade-in', k === v);
+    const viewEl = document.getElementById('view-' + k);
+    if (viewEl) {
+      viewEl.classList.toggle('hidden', k !== v);
+      if (k === v) viewEl.style.display = '';
+    }
     const btn = document.getElementById('nav-' + k);
-    if (k === v) btn.classList.add('bg-slate-800','text-white');
-    else btn.classList.remove('bg-slate-800','text-white');
-    if (k !== v) btn.classList.add('text-slate-400','hover:text-white','hover:bg-slate-800');
-    else btn.classList.remove('text-slate-400','hover:text-white','hover:bg-slate-800');
+    if (btn) btn.classList.toggle('active', k === v);
   });
-  document.getElementById('page-title').textContent = VIEWS[v];
-  document.getElementById('page-sub').textContent   = SUBS[v];
+
+  document.getElementById('page-title').textContent = VIEWS[v].title;
+  document.getElementById('page-sub').textContent   = VIEWS[v].sub;
+
   if (v === 'incidents')   renderIncidentList(allIncidents);
   if (v === 'validations') loadValidations();
+  if (v === 'integrations') loadIntegrations();
 }
 
-// ── Severity helpers ────────────────────────────────────────────────────────
-const SEV_LABEL = { P1:'Critical', P2:'Major', P3:'Minor', P4:'Info' };
-function sevBadge(sev) {
-  return `<span class="sev-${sev} rounded px-1.5 py-0.5 text-[10px] font-bold">${sev}</span>`;
+// ═══════════════════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════════════════
+function sevBadge(sev, large) {
+  const size = large ? 'font-size:12px;padding:3px 8px;' : 'font-size:10px;padding:2px 6px;';
+  return `<span class="sev-${sev}" style="${size}border-radius:5px;font-weight:700;white-space:nowrap;">${sev}</span>`;
 }
-function statusBadge(s) {
-  const open = s === 'OPEN';
-  return `<span class="rounded px-1.5 py-0.5 text-[10px] font-medium ${open ? 'bg-red-900 text-red-300' : 'bg-green-900 text-green-300'}">${s}</span>`;
+
+function statusPill(s) {
+  const cls = `status-${s}`;
+  const label = s === 'OPEN' ? 'Open' : s === 'ACKNOWLEDGED' ? 'Ack\'d' : 'Resolved';
+  return `<span class="${cls}" style="font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;white-space:nowrap;">${label}</span>`;
 }
+
 function fmtDate(iso) {
   if (!iso) return '—';
-  try { return new Date(iso).toLocaleString('en-US', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
-  catch { return iso.slice(0,16); }
+  try {
+    return new Date(iso).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  } catch { return iso.slice(0,16); }
 }
 
-// ── Overview ────────────────────────────────────────────────────────────────
+function fmtRelative(iso) {
+  if (!iso) return '';
+  try {
+    const diff = Date.now() - new Date(iso).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1)   return 'just now';
+    if (m < 60)  return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24)  return `${h}h ago`;
+    return `${Math.floor(h/24)}d ago`;
+  } catch { return ''; }
+}
+
+function duration(from, to) {
+  try {
+    const ms = new Date(to || new Date()).getTime() - new Date(from).getTime();
+    const m  = Math.round(ms / 60000);
+    if (m < 60) return `${m}m`;
+    return `${Math.floor(m/60)}h ${m%60}m`;
+  } catch { return '—'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Overview
+// ═══════════════════════════════════════════════════════════════════════════
 async function loadOverview() {
   const [incidents, stats] = await Promise.all([
     fetch(API + '/api/incidents').then(r => r.json()).catch(() => []),
@@ -281,266 +606,476 @@ async function loadOverview() {
   ]);
   allIncidents = incidents;
 
-  document.getElementById('stat-total').textContent    = stats.total_incidents ?? '—';
-  document.getElementById('stat-open').textContent     = stats.open_incidents ?? '—';
-  document.getElementById('stat-fp').textContent       = stats.false_positive_rate != null ? stats.false_positive_rate + '%' : '—';
-  const crit = (stats.severity_breakdown?.P1 ?? 0) + (stats.severity_breakdown?.P2 ?? 0);
-  document.getElementById('stat-critical').textContent = crit;
+  const open   = stats.open_incidents ?? 0;
+  const crit   = (stats.severity_breakdown?.P1 ?? 0) + (stats.severity_breakdown?.P2 ?? 0);
+  const fp     = stats.false_positive_rate ?? 0;
+  const mttr   = stats.mttr_minutes ?? 0;
 
-  // Open badge in sidebar
+  document.getElementById('stat-open').textContent     = open;
+  document.getElementById('stat-critical').textContent = crit;
+  document.getElementById('stat-fp').textContent       = fp + '%';
+  document.getElementById('stat-mttr').textContent     = mttr ? mttr + 'm' : '—';
+
   const badge = document.getElementById('badge-open');
-  if (stats.open_incidents > 0) { badge.textContent = stats.open_incidents; badge.classList.remove('hidden'); }
-  else badge.classList.add('hidden');
+  badge.textContent = open;
+  badge.classList.toggle('hidden', open === 0);
 
   // Severity bars
   const maxV = Math.max(1, ...Object.values(stats.severity_breakdown ?? {}));
-  const barHtml = ['P1','P2','P3','P4'].map(s => {
+  const sevColors = { P1:'#ef4444', P2:'#f97316', P3:'#eab308', P4:'#22c55e' };
+  document.getElementById('sev-bars').innerHTML = ['P1','P2','P3','P4'].map(s => {
     const count = stats.severity_breakdown?.[s] ?? 0;
     const pct   = Math.round(count / maxV * 100);
-    return `<div class="flex items-center gap-3">
-      <span class="text-xs font-bold w-6 sev-${s} rounded px-1 text-center">${s}</span>
-      <div class="flex-1 bg-slate-800 rounded-full h-2">
-        <div class="dot-${s} h-2 rounded-full transition-all duration-500" style="width:${pct}%"></div>
+    return `<div class="sev-bar">
+      ${sevBadge(s)}
+      <div class="progress-bar" style="flex:1;">
+        <div class="progress-fill" style="width:${pct}%;background:${sevColors[s]};"></div>
       </div>
-      <span class="text-xs text-slate-400 w-4 text-right">${count}</span>
+      <span style="font-size:12px;color:#8b8fa8;width:18px;text-align:right;">${count}</span>
     </div>`;
   }).join('');
-  document.getElementById('sev-bars').innerHTML = barHtml || '<p class="text-xs text-slate-600">No data</p>';
 
-  // Recent table (last 6)
-  const recent = incidents.slice(0, 6);
-  document.getElementById('recent-table').innerHTML = recentTableHtml(recent);
+  // Recent table
+  const recent = incidents.slice(0, 8);
+  const recentEl = document.getElementById('recent-incidents');
+  if (!recent.length) {
+    recentEl.innerHTML = '<div class="empty-state" style="padding:40px 20px;"><p>No incidents yet — fire one in Demo Mode</p></div>';
+  } else {
+    recentEl.innerHTML = `
+      <table class="data-table">
+        <thead><tr>
+          <th>Title</th>
+          <th>Sev</th>
+          <th>Status</th>
+          <th>When</th>
+          <th>Duration</th>
+        </tr></thead>
+        <tbody>
+        ${recent.map(i => `<tr onclick="openIncident('${i.incident_id}')" style="cursor:pointer;">
+          <td>
+            <div style="font-size:13px;font-weight:500;color:#fff;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.title || i.service_name}</div>
+            <div style="font-size:11px;color:#5a5e78;font-family:monospace;">${i.service_name}</div>
+          </td>
+          <td>${sevBadge(i.severity)}</td>
+          <td>${statusPill(i.status ?? 'OPEN')}</td>
+          <td style="color:#5a5e78;white-space:nowrap;">${fmtRelative(i.created_at)}</td>
+          <td style="color:#5a5e78;white-space:nowrap;">${duration(i.created_at, i.resolved_at)}</td>
+        </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  // System status
+  loadSystemStatus();
 }
 
-function recentTableHtml(rows) {
-  if (!rows.length) return '<p class="text-xs text-slate-600 text-center py-4">No incidents yet — fire one in Demo Mode</p>';
-  return `<table class="w-full text-xs">
-    <thead><tr class="text-slate-500 border-b border-slate-800">
-      <th class="pb-2 text-left font-medium">Service</th>
-      <th class="pb-2 text-left font-medium">Severity</th>
-      <th class="pb-2 text-left font-medium">Status</th>
-      <th class="pb-2 text-left font-medium">When</th>
-    </tr></thead>
-    <tbody class="divide-y divide-slate-800">
-    ${rows.map(i => `<tr class="hover:bg-slate-800 cursor-pointer" onclick="openIncident('${i.incident_id}')">
-      <td class="py-2 font-mono text-slate-300">${i.service_name}</td>
-      <td class="py-2">${sevBadge(i.severity)}</td>
-      <td class="py-2">${statusBadge(i.status ?? 'OPEN')}</td>
-      <td class="py-2 text-slate-500">${fmtDate(i.created_at)}</td>
-    </tr>`).join('')}
-    </tbody></table>`;
+async function loadSystemStatus() {
+  const el = document.getElementById('system-status');
+  el.innerHTML = '<div style="font-size:11px;color:#5a5e78;">Checking…</div>';
+  try {
+    const s = await fetch(API + '/api/integrations/status').then(r => r.json()).catch(() => ({}));
+    const items = [
+      { name: 'Floci / DynamoDB', up: s.dynamodb?.up ?? false },
+      { name: 'KServe + Ollama',  up: s.kserve?.up  ?? false },
+      { name: 'Loki',             up: s.loki?.up     ?? false, optional: !s.loki?.configured },
+    ];
+    el.innerHTML = items.map(item => `
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:12px;color:#8b8fa8;">${item.name}</span>
+        ${item.optional && !item.up
+          ? '<span style="font-size:10px;color:#5a5e78;">not configured</span>'
+          : `<div class="pulse-dot" style="width:7px;height:7px;border-radius:50%;background:${item.up ? '#22c55e' : '#ef4444'};"></div>`
+        }
+      </div>`).join('');
+  } catch {
+    el.innerHTML = '<div style="font-size:11px;color:#5a5e78;">unavailable</div>';
+  }
 }
 
-// ── Incidents list ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// Incidents list
+// ═══════════════════════════════════════════════════════════════════════════
 function openIncident(id) {
   selectedId = id;
   setView('incidents');
-  renderIncidentList(allIncidents);
   loadDetail(id);
 }
 
 function applyFilters() {
   const status = document.getElementById('filter-status').value;
   const sev    = document.getElementById('filter-sev').value;
+  const query  = (document.getElementById('search-input').value || '').toLowerCase();
   let filtered = allIncidents;
   if (status) filtered = filtered.filter(i => (i.status ?? 'OPEN') === status);
   if (sev)    filtered = filtered.filter(i => i.severity === sev);
+  if (query)  filtered = filtered.filter(i =>
+    (i.title || '').toLowerCase().includes(query) ||
+    (i.service_name || '').toLowerCase().includes(query) ||
+    (i.root_cause || '').toLowerCase().includes(query)
+  );
   renderIncidentList(filtered);
 }
 
 function renderIncidentList(items) {
   const el = document.getElementById('incident-list');
-  if (!items.length) { el.innerHTML = '<p class="text-xs text-slate-600 text-center py-8">No incidents match</p>'; return; }
+  if (!items || !items.length) {
+    el.innerHTML = '<div class="empty-state" style="padding:40px 16px;"><p>No incidents match filters</p></div>';
+    return;
+  }
   el.innerHTML = items.map(i => {
-    const active = i.incident_id === selectedId;
-    return `<div onclick="loadDetail('${i.incident_id}')" class="cursor-pointer rounded-lg p-3 border transition-colors ${active ? 'border-violet-600 bg-slate-800' : 'border-slate-800 bg-slate-900 hover:border-slate-700'} ${i.status === 'OPEN' ? 'ring-open' : 'ring-resolved'}">
-      <div class="flex items-center justify-between mb-1">
-        ${sevBadge(i.severity)}
-        ${statusBadge(i.status ?? 'OPEN')}
+    const active  = i.incident_id === selectedId;
+    const isOpen  = i.status !== 'RESOLVED';
+    const dotColor = { P1:'#ef4444', P2:'#f97316', P3:'#eab308', P4:'#22c55e' }[i.severity] || '#5a5e78';
+    const pending  = i.metadata?.ai_pending;
+    return `<div onclick="loadDetail('${i.incident_id}')" class="${active ? 'active' : ''}" style="
+        padding:14px 16px;border-bottom:1px solid #1a1d28;cursor:pointer;
+        background:${active ? '#1a1d28' : 'transparent'};
+        ${active ? 'border-left:3px solid #7c3aed;' : 'border-left:3px solid transparent;'}
+        transition:background .1s;
+      " onmouseover="if(!${active})this.style.background='#13151e'" onmouseout="if(!${active})this.style.background='transparent'">
+      <div style="display:flex;align-items:flex-start;gap:10px;">
+        <div class="pulse-dot" style="width:8px;height:8px;border-radius:50%;background:${dotColor};margin-top:5px;flex-shrink:0;${isOpen ? '' : 'animation:none;opacity:.5;'}"></div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:600;color:#fff;line-height:1.4;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${i.title || i.service_name}</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap;">
+            ${sevBadge(i.severity)}
+            ${statusPill(i.status ?? 'OPEN')}
+            ${pending ? '<span style="font-size:10px;color:#a78bfa;">⏳ AI pending</span>' : ''}
+            ${i.assignee ? `<span style="font-size:10px;color:#5a5e78;">→ ${i.assignee}</span>` : ''}
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:5px;">
+            <span style="font-size:10px;color:#5a5e78;font-family:monospace;">${i.service_name}</span>
+            <span style="font-size:10px;color:#5a5e78;">${fmtRelative(i.created_at)}</span>
+          </div>
+        </div>
       </div>
-      <p class="text-sm font-medium text-white mt-1 truncate">${i.service_name}</p>
-      <p class="text-[11px] text-slate-500 mt-0.5 line-clamp-2">${i.root_cause?.slice(0,90) || 'RCA pending…'}${(i.root_cause?.length > 90) ? '…' : ''}</p>
-      <p class="text-[10px] text-slate-600 mt-1.5">${fmtDate(i.created_at)}</p>
     </div>`;
   }).join('');
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Incident detail
+// ═══════════════════════════════════════════════════════════════════════════
 async function loadDetail(id) {
   selectedId = id;
   renderIncidentList(allIncidents);
 
   const panel = document.getElementById('detail-panel');
-  panel.innerHTML = '<div class="flex items-center justify-center h-full text-slate-500 text-sm">Loading…</div>';
+  panel.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#5a5e78;font-size:13px;gap:8px;">
+    <svg class="spin" style="width:16px;height:16px;" fill="none" viewBox="0 0 24 24"><circle style="opacity:.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+    Loading incident…
+  </div>`;
 
   const inc = await fetch(API + '/api/incidents/' + id).then(r => r.json()).catch(() => null);
-  if (!inc) { panel.innerHTML = '<div class="p-6 text-red-400 text-sm">Failed to load incident</div>'; return; }
+  if (!inc) {
+    panel.innerHTML = '<div style="padding:24px;color:#f87171;font-size:13px;">Failed to load incident.</div>';
+    return;
+  }
 
-  const logs = inc.log_analysis ?? {};
+  const logs   = inc.log_analysis ?? {};
   const impact = inc.impact_scope ?? {};
-  const runbook = inc.runbook ?? {};
-  const runbookSteps = Object.entries(runbook).map(([k,v]) => `<li class="flex gap-2"><span class="text-violet-400">→</span><span>${v}</span></li>`).join('');
-  const components = (logs.affected_components ?? []).join(', ') || '—';
-  const ctxBadge = inc.context_used === 'logs+source'
-    ? '<span class="text-[10px] bg-emerald-900/60 text-emerald-300 rounded px-1.5 py-0.5">logs + source</span>'
-    : inc.context_used === 'metadata-only'
-    ? '<span class="text-[10px] bg-yellow-900/60 text-yellow-300 rounded px-1.5 py-0.5">metadata only</span>'
-    : '';
-  const srcBadge = inc.rca_source === 'kserve-ollama'
-    ? '<span class="text-[10px] bg-violet-900/60 text-violet-300 rounded px-1.5 py-0.5">AI · kserve-ollama</span>'
-    : inc.rca_source === 'fallback'
-    ? '<span class="text-[10px] bg-slate-700 text-slate-400 rounded px-1.5 py-0.5">fallback text</span>'
-    : '';
-  const logExcerpt = logs.error_log_excerpt ?? '';
+  const rb     = inc.runbook ?? {};
+  const rbSteps = Object.entries(rb);
+
+  const isAIPending = inc.metadata?.ai_pending;
+  const isAI        = inc.ai_generated;
+  const srcBadge = isAI
+    ? '<span class="ai-badge">AI · kserve-ollama</span>'
+    : isAIPending
+    ? '<span class="ai-badge" style="color:#fb923c;border-color:#f9731640;background:#f9731620;">⏳ AI generating…</span>'
+    : '<span style="font-size:10px;color:#5a5e78;background:#1a1d28;border:1px solid #2a2d3e;border-radius:20px;padding:2px 8px;">fallback text</span>';
+
+  // Timeline events
+  const tlEvents = [];
+  if (inc.created_at)       tlEvents.push({ ts: inc.created_at,       label: 'Incident created',            color: '#ef4444' });
+  if (inc.acknowledged_at)  tlEvents.push({ ts: inc.acknowledged_at,  label: `Acknowledged by ${inc.assignee || 'on-call'}`, color: '#f97316' });
+  if (inc.resolved_at)      tlEvents.push({ ts: inc.resolved_at,      label: 'Incident resolved',           color: '#22c55e' });
+  if (!isAIPending && !inc.resolved_at) tlEvents.push({ ts: inc.created_at, label: 'RCA analysis complete', color: '#8b5cf6' });
+  tlEvents.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+
+  const sevColor  = { P1:'#ef4444', P2:'#f97316', P3:'#eab308', P4:'#22c55e' }[inc.severity] || '#5a5e78';
+  const errorPct  = impact.error_rate_in_sample != null ? (parseFloat(impact.error_rate_in_sample) * 100).toFixed(1) + '%' : '—';
+  const usersPct  = impact.users_impacted_pct != null ? impact.users_impacted_pct + '%' : '—';
+  const components = (logs.affected_components ?? []).join(' · ') || '—';
 
   panel.innerHTML = `
-  <div class="p-6 space-y-5 fade-in">
-    <!-- Header -->
-    <div class="flex items-start justify-between">
-      <div>
-        <div class="flex items-center gap-2 mb-1">
-          ${sevBadge(inc.severity)}
-          ${statusBadge(inc.status ?? 'OPEN')}
-          <span class="text-[10px] text-slate-500">${inc.incident_id?.slice(0,8)}…</span>
+  <div style="padding:24px;max-width:900px;" class="fade-in">
+
+    <!-- ── Header ──────────────────────────────────────────────────────── -->
+    <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:24px;">
+      <div style="width:4px;border-radius:4px;background:${sevColor};align-self:stretch;flex-shrink:0;"></div>
+      <div style="flex:1;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+          ${sevBadge(inc.severity, true)}
+          ${statusPill(inc.status ?? 'OPEN')}
+          ${srcBadge}
+          <span style="font-size:11px;color:#3a3e54;font-family:monospace;">${inc.incident_id?.slice(0,8)}…</span>
         </div>
-        <h2 class="text-lg font-bold text-white">${inc.service_name}</h2>
-        <p class="text-xs text-slate-500">${fmtDate(inc.created_at)}</p>
-      </div>
-      ${inc.status === 'OPEN' ? `<button onclick="resolveIncident('${inc.incident_id}')" class="text-xs bg-green-900 hover:bg-green-800 text-green-300 rounded-lg px-3 py-1.5 transition-colors">Mark Resolved</button>` : ''}
-    </div>
-
-    <!-- RCA -->
-    <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="text-xs font-semibold text-violet-400 uppercase tracking-wider">🔍 Root Cause Analysis</h3>
-        <div class="flex gap-1.5">${srcBadge}${ctxBadge}</div>
-      </div>
-      <p class="text-sm text-slate-200 leading-relaxed">${inc.root_cause || '<span class="text-slate-500">RCA not yet available — pipeline still running</span>'}</p>
-      ${inc.failed_function ? `<div class="mt-3 pt-3 border-t border-slate-700"><p class="text-xs text-slate-500">Failed function</p><p class="font-mono text-sm text-rose-300 mt-0.5">${inc.failed_function}()</p></div>` : ''}
-    </div>
-
-    <!-- Log Evidence used by AI -->
-    ${logExcerpt ? `<div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-      <h3 class="text-xs font-semibold text-yellow-400 uppercase tracking-wider mb-2">🪵 Log Evidence (fed to AI)</h3>
-      <pre class="text-[11px] text-slate-400 font-mono leading-relaxed whitespace-pre-wrap overflow-auto max-h-48 bg-slate-900 rounded p-3">${logExcerpt.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
-      <p class="text-[10px] text-slate-600 mt-1">${logs.log_sample_size ?? 0} error lines captured · AI used last 500 chars</p>
-    </div>` : ''}
-
-    <!-- Log Analysis metadata -->
-    <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-      <h3 class="text-xs font-semibold text-yellow-400 uppercase tracking-wider mb-3">📊 Log Analysis</h3>
-      <div class="grid grid-cols-2 gap-3 text-xs">
-        <div><p class="text-slate-500">Rule-based severity</p><p class="font-bold text-white mt-0.5">${logs.rule_severity ?? '—'}</p></div>
-        <div><p class="text-slate-500">ML severity</p><p class="font-bold text-white mt-0.5">${logs.ml_severity ?? '—'}</p></div>
-        <div><p class="text-slate-500">Trend</p><p class="font-bold text-white mt-0.5 capitalize">${logs.degradation_trend ?? '—'}</p></div>
-        <div><p class="text-slate-500">Error lines sampled</p><p class="font-bold text-white mt-0.5">${logs.log_sample_size ?? '—'}</p></div>
-        <div class="col-span-2"><p class="text-slate-500">Affected components</p><p class="font-mono text-violet-300 mt-0.5">${components}</p></div>
-      </div>
-    </div>
-
-    <!-- Impact -->
-    <div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-      <h3 class="text-xs font-semibold text-orange-400 uppercase tracking-wider mb-3">💥 Impact Scope</h3>
-      <div class="grid grid-cols-2 gap-3 text-xs">
-        <div>
-          <p class="text-slate-500">Error rate</p>
-          <p class="text-2xl font-bold text-orange-400">${impact.error_rate_in_sample != null ? (parseFloat(impact.error_rate_in_sample)*100).toFixed(1)+'%' : '—'}</p>
-        </div>
-        <div>
-          <p class="text-slate-500">Users impacted</p>
-          <p class="text-2xl font-bold text-orange-400">${impact.users_impacted_pct != null ? impact.users_impacted_pct+'%' : '—'}</p>
+        <h2 style="font-size:18px;font-weight:700;color:#fff;margin:0 0 4px;line-height:1.3;">${inc.title || inc.service_name}</h2>
+        <div style="display:flex;align-items:center;gap:16px;font-size:12px;color:#5a5e78;flex-wrap:wrap;">
+          <span style="font-family:monospace;color:#8b8fa8;">${inc.service_name}</span>
+          <span>Created ${fmtDate(inc.created_at)}</span>
+          <span>Duration: ${duration(inc.created_at, inc.resolved_at)}</span>
+          ${inc.assignee ? `<span>Assignee: <strong style="color:#a78bfa;">${inc.assignee}</strong></span>` : ''}
         </div>
       </div>
-      ${impact.summary ? `<p class="text-xs text-slate-400 mt-2 leading-relaxed">${impact.summary}</p>` : ''}
+      <div style="display:flex;gap:8px;flex-shrink:0;">
+        ${inc.status === 'OPEN' ? `
+          <button onclick="ackIncident('${inc.incident_id}')" class="btn btn-ghost" style="font-size:12px;">Acknowledge</button>
+          <button onclick="resolveIncident('${inc.incident_id}')" class="btn btn-success" style="font-size:12px;">Mark Resolved</button>
+        ` : inc.status === 'ACKNOWLEDGED' ? `
+          <button onclick="resolveIncident('${inc.incident_id}')" class="btn btn-success" style="font-size:12px;">Mark Resolved</button>
+        ` : `<span style="font-size:12px;color:#4ade80;">✓ Resolved ${fmtDate(inc.resolved_at)}</span>`}
+      </div>
     </div>
 
-    <!-- Runbook -->
-    ${runbookSteps ? `<div class="bg-slate-800 rounded-xl p-4 border border-slate-700">
-      <h3 class="text-xs font-semibold text-green-400 uppercase tracking-wider mb-3">📋 Remediation Runbook</h3>
-      <ol class="text-sm text-slate-300 space-y-2 list-decimal list-inside">${runbookSteps}</ol>
-    </div>` : ''}
+    <div style="display:grid;grid-template-columns:1fr 280px;gap:16px;align-items:start;">
+
+    <!-- ── Left column ─────────────────────────────────────────────────── -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <!-- Impact banner -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;background:#13151e;border:1px solid #2a2d3e;border-radius:12px;overflow:hidden;">
+        <div style="padding:16px 20px;border-right:1px solid #2a2d3e;">
+          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;margin-bottom:4px;">Error Rate</div>
+          <div style="font-size:24px;font-weight:700;color:${sevColor};">${errorPct}</div>
+        </div>
+        <div style="padding:16px 20px;border-right:1px solid #2a2d3e;">
+          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;margin-bottom:4px;">Users Impacted</div>
+          <div style="font-size:24px;font-weight:700;color:${sevColor};">${usersPct}</div>
+        </div>
+        <div style="padding:16px 20px;">
+          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;margin-bottom:4px;">Trend</div>
+          <div style="font-size:18px;font-weight:700;color:${logs.degradation_trend === 'worsening' ? '#ef4444' : logs.degradation_trend === 'improving' ? '#22c55e' : '#facc15'};">${logs.degradation_trend || 'stable'}</div>
+        </div>
+      </div>
+      ${impact.summary ? `<div style="font-size:12px;color:#8b8fa8;padding:0 4px;line-height:1.6;">${impact.summary}</div>` : ''}
+
+      <!-- RCA -->
+      <div class="card" style="padding:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#a78bfa;">Root Cause Analysis</div>
+          ${srcBadge}
+        </div>
+        <p style="font-size:13px;color:#e2e4ef;line-height:1.7;margin:0;">${
+          isAIPending
+            ? '<span style="color:#f97316;">⏳ AI is analysing this incident — check back in ~30 seconds. The page auto-refreshes every 15 s.</span>'
+            : inc.root_cause || '<span style="color:#5a5e78;">No RCA available.</span>'
+        }</p>
+        ${logs.affected_components?.length ? `
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #2a2d3e;">
+          <div style="font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#5a5e78;margin-bottom:8px;">Affected Components</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">${(logs.affected_components || []).map(c =>
+            `<span style="background:#1a1d28;border:1px solid #2a2d3e;border-radius:6px;padding:3px 8px;font-size:11px;font-family:monospace;color:#a78bfa;">${c}</span>`
+          ).join('')}</div>
+        </div>` : ''}
+      </div>
+
+      <!-- Runbook -->
+      ${rbSteps.length ? `<div class="card" style="padding:20px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#4ade80;margin-bottom:14px;">Remediation Runbook</div>
+        <div>${rbSteps.map(([k, v], i) => `
+          <div class="runbook-step">
+            <div class="step-num">${i + 1}</div>
+            <div style="font-size:13px;color:#d4d6e8;line-height:1.5;padding-top:2px;">${v}</div>
+          </div>`).join('')}
+        </div>
+      </div>` : ''}
+
+      <!-- Log analysis metadata -->
+      <div class="card" style="padding:20px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#facc15;margin-bottom:14px;">Log Analysis</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          ${[
+            ['Rule Severity',  logs.rule_severity ?? '—'],
+            ['ML Severity',    logs.ml_severity   ?? '—'],
+            ['Log Lines',      logs.log_sample_size ?? '—'],
+            ['Analyzed At',    logs.analyzed_at ? fmtDate(logs.analyzed_at) : '—'],
+          ].map(([label, val]) => `
+            <div style="background:#1a1d28;border:1px solid #2a2d3e;border-radius:8px;padding:10px 12px;">
+              <div style="font-size:10px;color:#5a5e78;margin-bottom:3px;">${label}</div>
+              <div style="font-size:13px;font-weight:600;color:#fff;">${val}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Right column: timeline ───────────────────────────────────────── -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div class="card" style="padding:20px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8b8fa8;margin-bottom:16px;">Timeline</div>
+        ${tlEvents.map((e, idx) => `
+          <div style="display:flex;gap:12px;">
+            <div style="display:flex;flex-direction:column;align-items:center;width:10px;">
+              <div class="tl-dot" style="background:${e.color};"></div>
+              ${idx < tlEvents.length - 1 ? '<div class="tl-line"></div>' : ''}
+            </div>
+            <div style="padding-bottom:${idx < tlEvents.length - 1 ? '16px' : '0'};">
+              <div style="font-size:12px;color:#e2e4ef;font-weight:500;">${e.label}</div>
+              <div style="font-size:10px;color:#5a5e78;margin-top:2px;">${fmtDate(e.ts)}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+
+      <!-- Metadata -->
+      <div class="card" style="padding:20px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8b8fa8;margin-bottom:14px;">Metadata</div>
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:12px;">
+          ${[
+            ['Incident ID',  inc.incident_id?.slice(0,12) + '…'],
+            ['Service',      inc.service_name],
+            ['Team',         inc.metadata?.team || '—'],
+            ['Source',       inc.metadata?.source || '—'],
+            ['RCA source',   inc.rca_source || '—'],
+          ].map(([k, v]) => `
+            <div style="display:flex;justify-content:space-between;gap:8px;">
+              <span style="color:#5a5e78;">${k}</span>
+              <span style="color:#8b8fa8;font-family:monospace;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px;" title="${v}">${v}</span>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    </div><!-- /grid -->
   </div>`;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Incident actions
+// ═══════════════════════════════════════════════════════════════════════════
 async function resolveIncident(id) {
   await fetch(API + '/api/incidents/' + id + '/resolve', { method: 'POST' });
   await refresh();
-  loadDetail(id);
+  if (selectedId) loadDetail(selectedId);
 }
 
-// ── Validations ──────────────────────────────────────────────────────────────
+async function ackIncident(id) {
+  await fetch(API + '/api/incidents/' + id + '/acknowledge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assignee: 'on-call' }),
+  });
+  await refresh();
+  if (selectedId) loadDetail(selectedId);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Validations
+// ═══════════════════════════════════════════════════════════════════════════
 async function loadValidations() {
   const rows = await fetch(API + '/api/validations').then(r => r.json()).catch(() => []);
-  const el = document.getElementById('validation-table');
-  if (!rows.length) { el.innerHTML = '<p class="text-xs text-slate-600 text-center py-4">No validation records yet</p>'; return; }
-  el.innerHTML = `<table class="w-full text-xs">
-    <thead><tr class="text-slate-500 border-b border-slate-800">
-      <th class="pb-2 text-left font-medium">Alert ID</th>
-      <th class="pb-2 text-left font-medium">Service</th>
-      <th class="pb-2 text-left font-medium">Signals</th>
-      <th class="pb-2 text-left font-medium">Result</th>
-      <th class="pb-2 text-left font-medium">When</th>
+  const el   = document.getElementById('validation-table');
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty-state" style="padding:40px 20px;"><p>No validation records yet</p></div>';
+    return;
+  }
+  el.innerHTML = `<table class="data-table">
+    <thead><tr>
+      <th>Alert ID</th><th>Service</th><th>Signals</th><th>Result</th><th>Validated</th>
     </tr></thead>
-    <tbody class="divide-y divide-slate-800">
+    <tbody>
     ${rows.map(r => {
       const real = r.is_real_incident === 'true';
-      return `<tr class="hover:bg-slate-800">
-        <td class="py-2 font-mono text-slate-400">${r.alert_id?.slice(0,8)}…</td>
-        <td class="py-2 text-slate-300">${r.service_name ?? '—'}</td>
-        <td class="py-2 text-slate-400">${r.signals_failed ?? 0}/${r.signals_checked ?? 0} failed</td>
-        <td class="py-2"><span class="rounded px-1.5 py-0.5 text-[10px] font-bold ${real ? 'bg-red-900 text-red-300' : 'bg-green-900 text-green-300'}">${real ? 'REAL INCIDENT' : 'FALSE POSITIVE'}</span></td>
-        <td class="py-2 text-slate-500">${fmtDate(r.validated_at)}</td>
+      return `<tr>
+        <td style="font-family:monospace;color:#5a5e78;">${(r.alert_id||'—').slice(0,10)}…</td>
+        <td style="font-family:monospace;color:#a78bfa;">${r.service_name || '—'}</td>
+        <td style="color:#8b8fa8;">${r.signals_failed ?? 0} / ${r.signals_checked ?? 0} failed</td>
+        <td><span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;${real ? 'background:#ef444420;color:#f87171;border:1px solid #ef444440;' : 'background:#22c55e20;color:#4ade80;border:1px solid #22c55e40;'}">${real ? '⚠ REAL INCIDENT' : '✓ False Positive'}</span></td>
+        <td style="color:#5a5e78;">${fmtDate(r.validated_at)}</td>
       </tr>`;
     }).join('')}
     </tbody></table>`;
 }
 
-// ── Demo mode ────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// Integrations
+// ═══════════════════════════════════════════════════════════════════════════
+async function loadIntegrations() {
+  const s = await fetch(API + '/api/integrations/status').then(r => r.json()).catch(() => ({}));
+
+  const kserve = s.kserve ?? {};
+  const loki   = s.loki   ?? {};
+  const dynamo = s.dynamodb ?? {};
+
+  const up   = v => `<span class="int-badge int-up">● Online</span>`;
+  const down = v => `<span class="int-badge int-down">● Offline</span>`;
+
+  document.getElementById('int-kserve-badge').outerHTML = kserve.up ? up() : down();
+  document.getElementById('int-kserve-url').textContent   = kserve.url   || 'http://localhost:8081';
+  document.getElementById('int-kserve-model').textContent = kserve.model || '—';
+  document.getElementById('int-loki-badge').outerHTML     = loki.up ? up() : down();
+  document.getElementById('int-floci-badge').outerHTML    = dynamo.up ? up() : down();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Demo mode
+// ═══════════════════════════════════════════════════════════════════════════
 async function fireDemoIncident() {
   const btn = document.getElementById('fire-btn');
   const svc = document.getElementById('demo-service').value;
   const sev = document.getElementById('demo-sev').value;
+
   btn.disabled = true;
-  btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> Firing…';
+  btn.innerHTML = `<svg class="spin" style="width:14px;height:14px;" fill="none" viewBox="0 0 24 24"><circle style="opacity:.25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:.75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Firing…`;
 
   const res = await fetch(API + '/api/demo/fire', {
-    method: 'POST',
+    method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ severity: sev, service: svc }),
+    body:    JSON.stringify({ severity: sev, service: svc }),
   }).then(r => r.json()).catch(e => ({ error: e.message }));
 
   btn.disabled = false;
-  btn.innerHTML = '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Fire Incident';
+  btn.innerHTML = `<svg style="width:15px;height:15px;" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg> Fire Incident`;
 
   const resultEl = document.getElementById('demo-result');
   resultEl.classList.remove('hidden');
+
   if (res.error) {
-    resultEl.className = 'mt-4 p-3 bg-slate-800 rounded-lg text-xs font-mono text-red-400';
-    resultEl.textContent = '✗ ' + res.error;
+    resultEl.style.color = '#f87171';
+    resultEl.innerHTML = `✗ ${res.error}`;
   } else {
-    resultEl.className = 'mt-4 p-3 bg-slate-800 rounded-lg text-xs font-mono text-green-400';
-    resultEl.textContent = `✓ Fired ${res.severity} incident on ${res.service}\n  ID: ${res.incident_id}\n  → Go to Incidents view to see the full RCA`;
+    resultEl.style.color = '#4ade80';
+    resultEl.innerHTML = `✓ Incident created\n  ID: ${res.incident_id}\n  Title: ${res.title}\n\n→ AI RCA generating in background (~30s)\n→ Switching to Incidents view…`;
     await refresh();
+    setTimeout(() => openIncident(res.incident_id), 800);
   }
 }
 
 function preset(svc, sev) {
   document.getElementById('demo-service').value = svc;
-  document.getElementById('demo-sev').value = sev;
+  document.getElementById('demo-sev').value     = sev;
   fireDemoIncident();
 }
 
-// ── Refresh ──────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// Refresh
+// ═══════════════════════════════════════════════════════════════════════════
 async function refresh() {
-  const res = await fetch(API + '/api/incidents').then(r => r.json()).catch(() => []);
-  allIncidents = res;
-  document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  const icon = document.getElementById('refresh-icon');
+  if (icon) icon.classList.add('spin');
+  try {
+    allIncidents = await fetch(API + '/api/incidents').then(r => r.json()).catch(() => []);
+    const now = new Date().toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    const mini = document.getElementById('last-updated-mini');
+    if (mini) mini.textContent = now;
 
-  if (currentView === 'overview')    await loadOverview();
-  if (currentView === 'incidents')   { applyFilters(); if (selectedId) await loadDetail(selectedId); }
-  if (currentView === 'validations') await loadValidations();
+    // Update open badge
+    const open  = allIncidents.filter(i => i.status === 'OPEN').length;
+    const badge = document.getElementById('badge-open');
+    if (badge) { badge.textContent = open; badge.classList.toggle('hidden', open === 0); }
+
+    if (currentView === 'overview')    await loadOverview();
+    if (currentView === 'incidents')   { applyFilters(); if (selectedId) await loadDetail(selectedId); }
+    if (currentView === 'validations') await loadValidations();
+  } finally {
+    if (icon) icon.classList.remove('spin');
+  }
 }
 
-// ── Boot ─────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// Boot
+// ═══════════════════════════════════════════════════════════════════════════
 (async () => {
   setView('overview');
   await loadOverview();

@@ -348,9 +348,14 @@ now = datetime.now(timezone.utc)
 INCIDENTS = [
     {
         "incident_id": str(uuid.uuid4()),
+        "title": "FIRING [P1]: auth-service — DatabaseConnectionPoolExhausted",
         "service_name": "auth-service",
         "severity": "P1",
         "status": "OPEN",
+        "assignee": "on-call-platform",
+        "acknowledged_at": (now - timedelta(hours=2, minutes=8)).isoformat(),
+        "rca_source": "fallback",
+        "ai_generated": False,
         "created_at": (now - timedelta(hours=2, minutes=14)).isoformat(),
         "root_cause": (
             "Database connection pool exhausted — all 100 connections saturated under peak load. "
@@ -382,9 +387,14 @@ INCIDENTS = [
     },
     {
         "incident_id": str(uuid.uuid4()),
+        "title": "FIRING [P2]: payments-service — TokenCacheMemoryLeak / OOM restart loop",
         "service_name": "payments-service",
         "severity": "P2",
-        "status": "OPEN",
+        "status": "ACKNOWLEDGED",
+        "assignee": "alice@corp.io",
+        "acknowledged_at": (now - timedelta(hours=5, minutes=15)).isoformat(),
+        "rca_source": "fallback",
+        "ai_generated": False,
         "created_at": (now - timedelta(hours=5, minutes=33)).isoformat(),
         "root_cause": (
             "Memory leak in the JWT token refresh cache — LRU eviction not triggering correctly "
@@ -417,9 +427,12 @@ INCIDENTS = [
     },
     {
         "incident_id": str(uuid.uuid4()),
+        "title": "FIRING [P3]: search-api — ElasticsearchClusterThrottled (429s)",
         "service_name": "search-api",
         "severity": "P3",
         "status": "OPEN",
+        "rca_source": "fallback",
+        "ai_generated": False,
         "created_at": (now - timedelta(hours=1, minutes=8)).isoformat(),
         "root_cause": (
             "Upstream rate limiting from the Elasticsearch cluster — 429 responses started after "
@@ -449,9 +462,13 @@ INCIDENTS = [
     },
     {
         "incident_id": str(uuid.uuid4()),
+        "title": "[RESOLVED] notification-service — SendGridAPIKeyRevoked / email delivery stopped",
         "service_name": "notification-service",
         "severity": "P3",
         "status": "RESOLVED",
+        "assignee": "bob@corp.io",
+        "rca_source": "fallback",
+        "ai_generated": False,
         "created_at": (now - timedelta(days=1, hours=3)).isoformat(),
         "resolved_at": (now - timedelta(days=1, hours=1, minutes=22)).isoformat(),
         "root_cause": (
@@ -483,9 +500,13 @@ INCIDENTS = [
     },
     {
         "incident_id": str(uuid.uuid4()),
+        "title": "[RESOLVED] ml-inference — GPUMemoryFragmentationOOM / inference requests failing",
         "service_name": "ml-inference",
         "severity": "P2",
         "status": "RESOLVED",
+        "assignee": "mlops-oncall",
+        "rca_source": "fallback",
+        "ai_generated": False,
         "created_at": (now - timedelta(days=2, hours=6)).isoformat(),
         "resolved_at": (now - timedelta(days=2, hours=4, minutes=11)).isoformat(),
         "root_cause": (
@@ -518,9 +539,12 @@ INCIDENTS = [
     },
     {
         "incident_id": str(uuid.uuid4()),
+        "title": "NOTICE [P4]: worker-service — VerboseDebugLoggingEnabled (cost impact only)",
         "service_name": "worker-service",
         "severity": "P4",
         "status": "OPEN",
+        "rca_source": "fallback",
+        "ai_generated": False,
         "created_at": (now - timedelta(minutes=38)).isoformat(),
         "root_cause": (
             "Verbose DEBUG logging accidentally left enabled after last Tuesday's hotfix for the "
