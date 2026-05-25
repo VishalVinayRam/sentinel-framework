@@ -59,3 +59,19 @@ class BaseGitProvider(ABC):
     @abstractmethod
     def verify_webhook(self, payload: str, headers: dict) -> bool:
         """Validate incoming webhook signature."""
+
+    def fetch_file(self, repo: str, path: str, ref: str = "HEAD") -> Optional[str]:
+        """Return raw file contents, or None if not found. Override in providers that support it."""
+        return None
+
+    def search_code(self, repo: str, keywords: list[str], extensions: list[str] = None) -> list[dict]:
+        """Search repo for files containing any of the keywords.
+
+        Returns list of {"path": str, "url": str, "snippet": str}.
+        Providers that don't support code search return [].
+        """
+        return []
+
+    def list_directory(self, repo: str, path: str, ref: str = "HEAD") -> list[str]:
+        """List file paths under a directory. Returns repo-relative paths."""
+        return []

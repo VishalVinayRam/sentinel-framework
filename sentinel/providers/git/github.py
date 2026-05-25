@@ -1,5 +1,7 @@
+import base64
 import hashlib
 import hmac
+from typing import Optional
 
 import requests
 
@@ -87,3 +89,62 @@ class GitHubProvider(BaseGitProvider):
             self._webhook_secret.encode(), payload.encode(), hashlib.sha256
         ).hexdigest()
         return hmac.compare_digest(sig, expected)
+
+    def fetch_file(self, repo: str, path: str, ref: str = "HEAD") -> Optional[str]:
+        resp = requests.get(
+            f"{GITHUB_API}/repos/{repo}/contents/{path}",
+            headers=self._headers,
+            params={"ref": ref},
+            timeout=10,
+        )
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("encoding") == "base64":
+            return base64.b64decode(data["content"]).decode("utf-8", errors="replace")
+        return data.get("content", "")
+
+    def search_code(self, repo: str, keywords: list[str], extensions: list[str] = None) -> list[dict]:
+        ext_filter = ""
+        if extensions:
+            ext_filter = " " + " ".join(f"extension:{e.lstrip('.')}" for e in extensions)
+        query = " OR ".join(f'"{kw}"' for kw in keywords[:4]) + f" repo:{repo}{ext_filter}"
+        resp = requests.get(
+            f"{GITHUB_API}/search/code",
+            headers=self._headers,
+            params={"q": query, "per_page": 10},
+            timeout=15,
+        )
+        if resp.status_code in (403, 422):
+            return []
+        resp.raise_for_status()
+        results = []
+        for item in resp.json().get("items", []):
+            results.append({
+                "path": item["path"],
+                "url": item["html_url"],
+                "snippet": "",
+            })
+        return results
+
+    def list_directory(self, repo: str, path: str, ref: str = "HEAD") -> list[str]:
+        resp = requests.get(
+            f"{GITHUB_API}/repos/{repo}/contents/{path}",
+            headers=self._headers,
+            params={"ref": ref},
+            timeout=10,
+        )
+        if resp.status_code == 404:
+            return []
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, list):
+            return []
+        paths = []
+        for entry in data:
+            if entry["type"] == "file":
+                paths.append(entry["path"])
+            elif entry["type"] == "dir":
+                paths.extend(self.list_directory(repo, entry["path"], ref))
+        return paths
