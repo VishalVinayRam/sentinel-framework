@@ -10,11 +10,12 @@ Run:
 """
 
 import json
+import logging
 import os
 import re
 import sys
-import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -27,6 +28,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
+from pydantic import BaseModel, Field
+from typing import Literal
 
 # ── AWS / Floci config ─────────────────────────────────────────────────────
 ENDPOINT = os.environ.get("FLOCI_ENDPOINT", "http://localhost:4566")
@@ -68,6 +71,14 @@ LOKI_USER        = os.environ.get("LOKI_USER",   "")
 LOKI_PASSWORD    = os.environ.get("LOKI_PASSWORD", "")
 
 CLOUDWATCH_LOG_GROUP_PREFIX = os.environ.get("CLOUDWATCH_LOG_GROUP_PREFIX", "/ecs/")
+
+# ── Logger ─────────────────────────────────────────────────────────────────
+logger = logging.getLogger("sentinel.dashboard")
+
+# ── RCA worker pool ────────────────────────────────────────────────────────
+# Bounded pool prevents thread explosion under alert storms.
+_RCA_MAX_WORKERS = int(os.environ.get("SENTINEL_RCA_WORKERS", "20"))
+_RCA_EXECUTOR    = ThreadPoolExecutor(max_workers=_RCA_MAX_WORKERS, thread_name_prefix="rca-worker")
 
 # ── Auth ───────────────────────────────────────────────────────────────────
 # Set SENTINEL_API_KEY to enforce authentication on all API routes.
@@ -1195,6 +1206,26 @@ def _update_incident_rca(
         print(f"[rca-update] DynamoDB update failed for {incident_id}: {e}", file=sys.stderr)
 
 
+# ── Request models ─────────────────────────────────────────────────────────
+
+_SERVICE_PATTERN = r'^[\w][\w\-\.]*$'
+
+class IncidentPayload(BaseModel):
+    service:     str                             = Field(..., min_length=1, max_length=128, pattern=_SERVICE_PATTERN)
+    severity:    Literal["P1", "P2", "P3", "P4"] = "P3"
+    title:       Optional[str]                  = Field(None, max_length=512)
+    source:      Optional[str]                  = Field("webhook", max_length=64)
+    incident_id: Optional[str]                  = Field(None, max_length=64)
+    description: Optional[str]                  = Field(None, max_length=1024)
+    labels:      Optional[dict]                 = None
+
+
+class DemoFirePayload(BaseModel):
+    severity: Literal["P1", "P2", "P3", "P4"] = "P2"
+    service:  str                              = Field("demo-service", min_length=1, max_length=128)
+    title:    Optional[str]                   = Field(None, max_length=512)
+
+
 # ── API endpoints ──────────────────────────────────────────────────────────
 
 @app.get("/api/incidents")
@@ -1209,8 +1240,11 @@ def list_incidents(status: Optional[str] = None, severity: Optional[str] = None,
         if severity:
             items = [i for i in items if i.get("severity", "") == severity.upper()]
         return items
-    except Exception:
-        return []
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("list_incidents: DynamoDB scan failed")
+        raise HTTPException(status_code=503, detail={"error": "Service Unavailable", "detail": str(e)})
 
 
 @app.get("/api/incidents/{incident_id}")
@@ -1246,6 +1280,7 @@ def get_stats(_: None = Depends(verify_api_key)):
             fp      = sum(1 for r in vrows if r.get("is_real_incident") == "false")
             fp_rate = round(fp / max(real + fp, 1) * 100, 1)
         except Exception:
+            logger.warning("get_stats: validation table scan failed — fp_rate defaulting to 0")
             fp_rate = 0
 
         mttr_minutes = _calc_mttr(incidents)
@@ -1258,12 +1293,11 @@ def get_stats(_: None = Depends(verify_api_key)):
             "recent_count":        len([i for i in incidents if i.get("created_at", "") >= "2026-05-01"]),
             "mttr_minutes":        mttr_minutes,
         }
-    except Exception:
-        return {
-            "total_incidents": 0, "open_incidents": 0,
-            "severity_breakdown": {"P1": 0, "P2": 0, "P3": 0, "P4": 0},
-            "false_positive_rate": 0, "recent_count": 0, "mttr_minutes": 0,
-        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("get_stats: failed to compute stats")
+        raise HTTPException(status_code=503, detail={"error": "Service Unavailable", "detail": str(e)})
 
 
 def _calc_mttr(incidents: list) -> float:
@@ -1291,8 +1325,11 @@ def list_validations(limit: int = 20, _: None = Depends(verify_api_key)):
         items = [_serialise(i) for i in table.scan(Limit=limit).get("Items", [])]
         items.sort(key=lambda x: x.get("validated_at", ""), reverse=True)
         return items[:limit]
-    except Exception:
-        return []
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("list_validations: DynamoDB scan failed")
+        raise HTTPException(status_code=503, detail={"error": "Service Unavailable", "detail": str(e)})
 
 
 @app.get("/api/logs/{service}")
@@ -1381,7 +1418,17 @@ def _create_and_analyze(
     Called by fire_demo_incident, receive_incident, and any future trigger path.
     Returns the immediate response dict (incident_id, title, severity, service, ai_pending).
     """
-    iid      = iid or str(uuid.uuid4())
+    iid = iid or str(uuid.uuid4())
+
+    # Idempotency: if a caller supplies an incident_id, return the existing record unchanged.
+    if iid:
+        try:
+            existing = _dynamo().Table(INCIDENTS_TABLE).get_item(Key={"incident_id": iid}).get("Item")
+            if existing:
+                return _serialise(existing)
+        except Exception:
+            pass  # table unreachable — fall through and let put_item raise
+
     now      = datetime.now(timezone.utc).isoformat()
     sev      = severity.upper() if severity else "P3"
 
@@ -1444,7 +1491,7 @@ def _create_and_analyze(
             root_cause = (ai or {}).get("root_cause", rca_fallback)
             _notify_slack(iid, title, service, sev, root_cause, provider_label)
 
-    threading.Thread(target=_bg, daemon=True).start()
+    _RCA_EXECUTOR.submit(_bg)
 
     return {"incident_id": iid, "title": title, "severity": sev, "service": service, "ai_pending": True}
 
@@ -1452,7 +1499,7 @@ def _create_and_analyze(
 # ── Incident receiver (external webhook / alarm sources) ──────────────────────
 
 @app.post("/api/incidents/receive")
-def receive_incident(payload: dict, _: None = Depends(verify_api_key)):
+def receive_incident(payload: IncidentPayload, _: None = Depends(verify_api_key)):
     """
     General-purpose incident receiver — accepts webhooks from CloudWatch, Grafana,
     Loki AlertManager, PagerDuty, or any custom source.
@@ -1460,38 +1507,30 @@ def receive_incident(payload: dict, _: None = Depends(verify_api_key)):
     Minimum payload:
         { "service": "auth-service", "severity": "P1", "title": "DB pool exhausted" }
 
-    Optional fields:
-        source      — "cloudwatch" | "grafana" | "loki" | "pagerduty" | ... (default: "webhook")
-        incident_id — pre-assigned ID (idempotent re-delivery)
-        description — appended to title in metadata
-        labels      — dict of arbitrary key/value labels stored in metadata
-
     Response (immediate, before RCA completes):
         { "incident_id": "...", "title": "...", "severity": "P1",
           "service": "...", "ai_pending": true }
     """
-    service = payload.get("service") or payload.get("service_name") or "unknown-service"
-    severity = (payload.get("severity") or "P3").upper()
-    title    = payload.get("title") or payload.get("description") or _make_title(service, severity)
-    source   = payload.get("source") or "webhook"
-    iid      = payload.get("incident_id") or None
-
+    title = payload.title or payload.description or _make_title(payload.service, payload.severity)
     extra = {}
-    if payload.get("labels"):
-        extra["labels"] = payload["labels"]
-    if payload.get("description") and payload.get("title"):
-        extra["description"] = payload["description"]
+    if payload.labels:
+        extra["labels"] = payload.labels
+    if payload.description and payload.title:
+        extra["description"] = payload.description
 
-    return _create_and_analyze(service, severity, title, source=source, iid=iid, extra_metadata=extra or None)
+    return _create_and_analyze(
+        payload.service, payload.severity, title,
+        source=payload.source or "webhook",
+        iid=payload.incident_id,
+        extra_metadata=extra or None,
+    )
 
 
 @app.post("/api/demo/fire")
-def fire_demo_incident(payload: dict, _: None = Depends(verify_api_key)):
+def fire_demo_incident(payload: DemoFirePayload, _: None = Depends(verify_api_key)):
     """Fire a demo incident. Body: { "severity": "P1"|..., "service": "my-service" }"""
-    severity = payload.get("severity", "P2")
-    service  = payload.get("service",  "demo-service")
-    title    = payload.get("title") or _make_title(service, severity)
-    return _create_and_analyze(service, severity, title, source="demo")
+    title = payload.title or _make_title(payload.service, payload.severity)
+    return _create_and_analyze(payload.service, payload.severity, title, source="demo")
 
 
 @app.post("/api/incidents/{incident_id}/resolve")
