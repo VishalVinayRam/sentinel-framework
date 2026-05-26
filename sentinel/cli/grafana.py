@@ -7,7 +7,6 @@ Commands:
 """
 
 import json
-import os
 from pathlib import Path
 
 import click
@@ -65,7 +64,7 @@ def push(url: str, api_key: str, folder: str, dashboard: str):
 
     result = resp.json()
     dashboard_url = url + result.get("url", "")
-    click.echo(f"  dashboard pushed successfully")
+    click.echo("  dashboard pushed successfully")
     click.echo(f"  {dashboard_url}")
 
 

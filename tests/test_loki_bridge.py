@@ -1,7 +1,6 @@
 """Tests for the loki-bridge Lambda handler."""
 
 import base64
-import gzip
 import json
 import sys
 import os
@@ -13,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "services", "lo
 os.environ.setdefault("ALERTS_STREAM", "sentinel-alerts")
 os.environ.setdefault("AWS_REGION", "us-east-1")
 
-import handler as loki_handler
+import handler as loki_handler  # noqa: E402
 
 
 def _make_event(body: dict, base64_encoded: bool = False) -> dict:

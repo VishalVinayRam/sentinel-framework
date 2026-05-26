@@ -40,7 +40,7 @@ class GitHubProvider(BaseGitProvider):
             url=data["html_url"],
             diff=diff_resp.text[:10000],
             description=data.get("body") or "",
-            labels=[l["name"] for l in data.get("labels", [])],
+            labels=[lbl["name"] for lbl in data.get("labels", [])],
         )
 
     def post_comment(self, repo: str, pr_number: int, body: str) -> None:

@@ -7,7 +7,7 @@ import requests
 
 import sys
 sys.path.append("/var/task/shared")
-from aws_clients import dynamodb, kinesis
+from aws_clients import dynamodb, kinesis  # noqa: E402
 
 
 INCIDENTS_TABLE = os.environ["INCIDENTS_TABLE"]

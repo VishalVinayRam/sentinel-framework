@@ -1,5 +1,4 @@
-import pytest
-from datetime import datetime, timezone
+from datetime import datetime
 from sentinel.core.incident import Incident
 from sentinel.core.severity import Severity
 

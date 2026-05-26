@@ -19,7 +19,6 @@ Usage:
 
 from dataclasses import dataclass
 from typing import Optional
-import urllib.parse
 
 import requests
 
@@ -103,7 +102,9 @@ class LokiLogsProvider:
 
     def fetch_as_text(self, service: str, minutes: int = 30, limit: int = 100) -> str:
         lines = self.fetch_errors(service, minutes, limit)
-        return "\n".join(f"{l.timestamp_iso}  [{l.level}]  {l.message}" for l in lines)
+        return "\n".join(
+            f"{entry.timestamp_iso}  [{entry.level}]  {entry.message}" for entry in lines
+        )
 
     def query_raw(self, logql: str, minutes: int = 30, limit: int = 200) -> list[LokiLogLine]:
         """Execute an arbitrary LogQL query."""
@@ -180,7 +181,7 @@ def _parse_query_range(body: dict) -> list[LokiLogLine]:
                 level=_detect_level_from_labels_or_message(labels, message),
             ))
     # Sort newest-first
-    lines.sort(key=lambda l: l.timestamp_ns, reverse=True)
+    lines.sort(key=lambda entry: entry.timestamp_ns, reverse=True)
     return lines
 
 

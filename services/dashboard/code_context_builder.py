@@ -9,9 +9,7 @@ Priority order:
   3. Static fallback  — the hardcoded _CODE_CONTEXT_MAP in api.py (last resort)
 """
 
-import ast
 import os
-import re
 from pathlib import Path
 from typing import Optional
 
@@ -25,8 +23,8 @@ GITHUB_REPO  = os.environ.get("GITHUB_REPO", "")  # e.g. "org/repo"
 _KEYWORDS: dict[tuple, list[str]] = {
     ("auth-service",    "P1"): ["pool_size", "max_overflow", "pool_pre_ping", "create_engine"],
     ("auth-service",    "P2"): ["utcnow", "expires_at", "token_cache", "TTLCache"],
-    ("payments-service","P1"): ["requests.post", "timeout", "raise_for_status", "charge"],
-    ("payments-service","P2"): ["_pending", "deque", "enqueue", "flush"],
+    ("payments-service", "P1"): ["requests.post", "timeout", "raise_for_status", "charge"],
+    ("payments-service", "P2"): ["_pending", "deque", "enqueue", "flush"],
     ("search-api",      "P1"): ["bulk_index", "es.bulk", "body=body"],
     ("search-api",      "P2"): ["bulk_index", "es.bulk", "body=body"],
     ("search-api",      "P3"): ["bulk_index", "es.bulk", "body=body"],
@@ -36,7 +34,7 @@ _KEYWORDS: dict[tuple, list[str]] = {
     ("data-pipeline",   "P2"): ["get_shard_iterator", "NextShardIterator", "sleep"],
     ("notification-service", "P3"): ["SENDGRID_API_KEY", "os.environ", "sendgrid"],
     ("user-service",    "P3"): ["list_profiles", "db.query", "filter(User.id"],
-    ("inventory-service","P3"): ["get_stock", "r.get", "setex"],
+    ("inventory-service", "P3"): ["get_stock", "r.get", "setex"],
     ("api-gateway",     "P1"): ["UPSTREAM_TIMEOUT", "httpx", "TimeoutException"],
     ("ml-inference",    "P2"): ["torch.no_grad", "empty_cache", "_model.generate"],
 }
@@ -200,9 +198,9 @@ def _extract_function_range(lines: list[str], hit_line: int) -> tuple[int, int]:
             break
         # Top-level statement (no indent): valid anchor only when it's real code
         if i < hit_line and not lines[i].startswith(" ") and not lines[i].startswith("\t"):
-            if (stripped and
-                not stripped.startswith(("#", '"""', "'''")) and
-                not _is_docstring_line(lines, i)):
+            if (stripped
+                    and not stripped.startswith(("#", '"""', "'''"))
+                    and not _is_docstring_line(lines, i)):
                 start = i
                 found_anchor = True
                 break

@@ -5,11 +5,10 @@ from decimal import Decimal
 from datetime import datetime, timezone
 
 import requests
-import boto3
 
 import sys
 sys.path.append("/var/task/shared")
-from aws_clients import dynamodb, sqs
+from aws_clients import dynamodb, sqs  # noqa: E402
 
 
 VALIDATION_RESULTS_TABLE = os.environ["VALIDATION_RESULTS_TABLE"]

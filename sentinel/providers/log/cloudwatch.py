@@ -13,7 +13,7 @@ Usage:
 """
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import boto3
@@ -97,7 +97,7 @@ class CloudWatchLogsProvider:
     def fetch_as_text(self, service: str, minutes: int = 30, limit: int = 100) -> str:
         """Convenience method — returns log lines as a plain-text block."""
         lines = self.fetch_errors(service, minutes, limit)
-        return "\n".join(f"{l.timestamp}  [{l.level}]  {l.message}" for l in lines)
+        return "\n".join(f"{entry.timestamp}  [{entry.level}]  {entry.message}" for entry in lines)
 
     def list_log_groups(self, prefix: str = "") -> list[str]:
         """List available log group names (useful for service discovery)."""

@@ -4,11 +4,9 @@ DynamoDB calls are mocked via unittest.mock so no Floci/AWS is required.
 """
 import os
 import sys
-from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 # Ensure sentinel package is importable from repo root
@@ -25,6 +23,7 @@ client = TestClient(app, raise_server_exceptions=False)
 AUTH = {"X-API-Key": TEST_API_KEY}
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
 
 def _incident(incident_id="inc-001", severity="P1", status="OPEN", service="auth-service"):
     return {
@@ -168,7 +167,7 @@ def test_get_stats_dynamo_error_returns_503():
 
 def test_receive_valid_payload_returns_202():
     with patch("services.dashboard.api._dynamo") as mock_dynamo, \
-         patch("services.dashboard.api._RCA_EXECUTOR") as mock_pool:
+         patch("services.dashboard.api._RCA_EXECUTOR"):
         mock_dynamo.return_value.Table.return_value = _mock_table()
         r = client.post("/api/incidents/receive", headers=AUTH,
                         json={"service": "auth-service", "severity": "P1", "title": "DB down"})

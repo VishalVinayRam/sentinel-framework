@@ -9,7 +9,7 @@ import requests
 
 import sys
 sys.path.append("/var/task/shared")
-from aws_clients import dynamodb, s3
+from aws_clients import dynamodb  # noqa: E402, F401
 
 
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]

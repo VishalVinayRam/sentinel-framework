@@ -1,5 +1,4 @@
 import logging
-from typing import Iterator
 
 from sentinel.providers.base.llm import BaseLLMProvider
 from sentinel.rag.indexer import Chunk, CodebaseIndexer

@@ -1,6 +1,5 @@
 import json
 from dataclasses import dataclass
-from typing import Optional
 
 import psycopg2
 from psycopg2.extras import execute_values

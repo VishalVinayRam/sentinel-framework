@@ -1,7 +1,6 @@
 """Tests for the observability config section (loki/mimir/grafana)."""
 
 import yaml
-import pytest
 from sentinel.config.loader import load
 from sentinel.config.schema import GrafanaConfig, LokiConfig, MimirConfig, ObservabilityConfig
 

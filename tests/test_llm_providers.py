@@ -4,14 +4,14 @@ Uses the `responses` library to intercept requests.get/post — no real HTTP.
 """
 import pytest
 import responses as rsps_lib
-from requests.exceptions import ConnectionError, Timeout
+from requests.exceptions import ConnectionError
 
 from sentinel.providers.base.llm import LLMResponse
 from sentinel.providers.llm.anthropic import AnthropicProvider, ANTHROPIC_API
 from sentinel.providers.llm.openai import OpenAIProvider, OPENAI_API
 from sentinel.providers.llm.gemini import GeminiProvider, GEMINI_API
 from sentinel.providers.llm.kserve import KServeProvider
-from sentinel.providers.llm.ollama import OllamaProvider, OLLAMA_API
+from sentinel.providers.llm.ollama import OllamaProvider
 from sentinel.providers.llm.fallback import FallbackLLMProvider
 
 
@@ -145,6 +145,7 @@ class TestGeminiProvider:
 # ── KServe ──────────────────────────────────────────────────────────────────
 
 KSERVE_BASE = "http://kserve-test:8080"
+
 
 class TestKServeProvider:
     def setup_method(self):

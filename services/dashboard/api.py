@@ -14,18 +14,20 @@ import logging
 import os
 import re
 import sys
+import time
 import uuid
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from threading import Lock
 from typing import Optional
 
 import boto3
 import requests as _requests
-from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
@@ -79,6 +81,32 @@ logger = logging.getLogger("sentinel.dashboard")
 # Bounded pool prevents thread explosion under alert storms.
 _RCA_MAX_WORKERS = int(os.environ.get("SENTINEL_RCA_WORKERS", "20"))
 _RCA_EXECUTOR    = ThreadPoolExecutor(max_workers=_RCA_MAX_WORKERS, thread_name_prefix="rca-worker")
+
+
+# ── In-memory rate limiter ─────────────────────────────────────────────────
+class _RateLimiter:
+    """Sliding-window rate limiter keyed by client IP."""
+
+    def __init__(self, max_calls: int, window_secs: int):
+        self._max   = max_calls
+        self._win   = window_secs
+        self._calls: dict[str, deque] = {}
+        self._lock  = Lock()
+
+    def is_allowed(self, key: str) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            q = self._calls.setdefault(key, deque())
+            while q and now - q[0] > self._win:
+                q.popleft()
+            if len(q) >= self._max:
+                return False
+            q.append(now)
+            return True
+
+
+_RECEIVE_LIMITER  = _RateLimiter(max_calls=60, window_secs=60)   # 60 req/min
+_DEMO_FIRE_LIMITER = _RateLimiter(max_calls=10, window_secs=60)  # 10 req/min
 
 # ── Auth ───────────────────────────────────────────────────────────────────
 # Set SENTINEL_API_KEY to enforce authentication on all API routes.
@@ -191,8 +219,6 @@ _ERROR_TYPES = {
 }
 
 _DEFAULT_ERRORS = ["HighErrorRate", "ServiceDegraded", "LatencySpike", "ConnectionRefused"]
-
-import random as _random
 
 
 # ── Code context: per-(service, severity) curated source evidence ──────────
@@ -1210,6 +1236,7 @@ def _update_incident_rca(
 
 _SERVICE_PATTERN = r'^[\w][\w\-\.]*$'
 
+
 class IncidentPayload(BaseModel):
     service:     str                             = Field(..., min_length=1, max_length=128, pattern=_SERVICE_PATTERN)
     severity:    Literal["P1", "P2", "P3", "P4"] = "P3"
@@ -1229,16 +1256,40 @@ class DemoFirePayload(BaseModel):
 # ── API endpoints ──────────────────────────────────────────────────────────
 
 @app.get("/api/incidents")
-def list_incidents(status: Optional[str] = None, severity: Optional[str] = None, _: None = Depends(verify_api_key)):
+def list_incidents(
+    status: Optional[str] = None,
+    severity: Optional[str] = None,
+    limit: Optional[int] = None,
+    cursor: Optional[str] = None,
+    _: None = Depends(verify_api_key),
+):
     try:
-        table = _dynamo().Table(INCIDENTS_TABLE)
-        resp  = table.scan()
-        items = [_serialise(i) for i in resp.get("Items", [])]
+        table     = _dynamo().Table(INCIDENTS_TABLE)
+        scan_kw: dict = {}
+        if cursor:
+            try:
+                scan_kw["ExclusiveStartKey"] = json.loads(cursor)
+            except Exception:
+                raise HTTPException(status_code=400, detail={"error": "Bad Request", "detail": "Invalid cursor"})
+        if limit is not None:
+            if limit < 1 or limit > 1000:
+                raise HTTPException(status_code=400, detail={"error": "Bad Request", "detail": "limit must be 1–1000"})
+            scan_kw["Limit"] = limit
+
+        resp      = table.scan(**scan_kw)
+        items     = [_serialise(i) for i in resp.get("Items", [])]
         items.sort(key=lambda x: x.get("created_at", x.get("validated_at", "")), reverse=True)
         if status:
             items = [i for i in items if i.get("status", "").upper() == status.upper()]
         if severity:
             items = [i for i in items if i.get("severity", "") == severity.upper()]
+
+        next_cursor = None
+        if "LastEvaluatedKey" in resp:
+            next_cursor = json.dumps(resp["LastEvaluatedKey"])
+
+        if next_cursor is not None:
+            return {"items": items, "next_cursor": next_cursor}
         return items
     except HTTPException:
         raise
@@ -1336,7 +1387,7 @@ def list_validations(limit: int = 20, _: None = Depends(verify_api_key)):
 def get_logs(service: str, minutes: int = 30, _: None = Depends(verify_api_key)):
     """Fetch recent error logs for a service from Loki or CloudWatch."""
     logs = _fetch_log_context(service, minutes)
-    lines = [l for l in logs.splitlines() if l.strip()]
+    lines = [line for line in logs.splitlines() if line.strip()]
     return {
         "service": service,
         "source":  "loki" if (LOKI_URL and logs) else "cloudwatch" if (not IS_LOCAL and logs) else "none",
@@ -1482,7 +1533,7 @@ def _create_and_analyze(
         if ai:
             print(f"[rca-bg] {provider_label} — {str(ai.get('root_cause',''))[:100]}", file=sys.stderr)
         else:
-            print(f"[rca-bg] all providers failed — using fallback", file=sys.stderr)
+            print("[rca-bg] all providers failed — using fallback", file=sys.stderr)
 
         _update_incident_rca(iid, ai, sev, service, rca_fallback, runbook_fallback, provider_label)
         print(f"[rca-bg] updated {iid} (provider={provider_label})", file=sys.stderr)
@@ -1499,7 +1550,10 @@ def _create_and_analyze(
 # ── Incident receiver (external webhook / alarm sources) ──────────────────────
 
 @app.post("/api/incidents/receive")
-def receive_incident(payload: IncidentPayload, _: None = Depends(verify_api_key)):
+def receive_incident(request: Request, payload: IncidentPayload, _: None = Depends(verify_api_key)):
+    client_ip = request.client.host if request.client else "unknown"
+    if not _RECEIVE_LIMITER.is_allowed(client_ip):
+        raise HTTPException(status_code=429, detail={"error": "Too Many Requests", "detail": "Rate limit: 60 requests/min"})
     """
     General-purpose incident receiver — accepts webhooks from CloudWatch, Grafana,
     Loki AlertManager, PagerDuty, or any custom source.
@@ -1527,8 +1581,11 @@ def receive_incident(payload: IncidentPayload, _: None = Depends(verify_api_key)
 
 
 @app.post("/api/demo/fire")
-def fire_demo_incident(payload: DemoFirePayload, _: None = Depends(verify_api_key)):
+def fire_demo_incident(request: Request, payload: DemoFirePayload, _: None = Depends(verify_api_key)):
     """Fire a demo incident. Body: { "severity": "P1"|..., "service": "my-service" }"""
+    client_ip = request.client.host if request.client else "unknown"
+    if not _DEMO_FIRE_LIMITER.is_allowed(client_ip):
+        raise HTTPException(status_code=429, detail={"error": "Too Many Requests", "detail": "Rate limit: 10 requests/min"})
     title = payload.title or _make_title(payload.service, payload.severity)
     return _create_and_analyze(payload.service, payload.severity, title, source="demo")
 
@@ -1597,4 +1654,29 @@ def serve_ui():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "0.2.0"}
+    checks: dict = {}
+
+    # DynamoDB reachability
+    try:
+        _dynamo().Table(INCIDENTS_TABLE).table_status  # lightweight describe call
+        checks["dynamodb"] = "ok"
+    except Exception:
+        try:
+            _dynamo().meta.client.list_tables(Limit=1)
+            checks["dynamodb"] = "ok"
+        except Exception:
+            checks["dynamodb"] = "unreachable"
+
+    # KServe / Ollama bridge (optional — degraded, not down)
+    try:
+        r = _requests.get(f"{KSERVE_ENDPOINT}/v2/health/ready", timeout=2)
+        checks["kserve"] = "ok" if r.status_code == 200 else "degraded"
+    except Exception:
+        checks["kserve"] = "degraded"
+
+    overall = "ok" if checks.get("dynamodb") == "ok" else "degraded"
+    status_code = 200 if overall == "ok" else 503
+    return JSONResponse(
+        content={"status": overall, "version": "0.2.0", "checks": checks},
+        status_code=status_code,
+    )

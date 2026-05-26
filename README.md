@@ -1,139 +1,195 @@
-# Sentinel — AI-Powered Incident Response & Code Intelligence Platform
+# Sentinel Framework
 
-A distributed, event-driven engineering intelligence platform that automates incident detection, root cause analysis, and pre-deployment code review using local AWS infrastructure (via Floci) and Kubernetes-based ML inference.
+**AI-powered incident response — plug into any cloud, any git provider, any LLM.**
 
-## Architecture
-
-```
-Pre-Deployment                    Production
-─────────────                     ──────────
-PR opened                         Alert fired
-    │                                 │
-API Gateway                       Kinesis Stream
-    │                                 │
-Security Agent ──► PR Comment     Validation Lambda
-(Phi-3/KServe)                       │
-    │                         ┌──────┴──────┐
-RAG Knowledge Base         Real?        False Positive
-(pgvector + Redis)            │              │
-                         Log Analyzer    DynamoDB (logged)
-                         (severity P1-P4)
-                              │
-                         Step Functions
-                         (root cause orchestration)
-                              │
-                    ┌─────────┴──────────┐
-                 KServe               RAG Query
-               (Phi-3)           (past incidents)
-                    │
-               Runbook + Fix Recommendation
-                    │
-              Slack / Dashboard
-```
-
-## Sub-systems
-
-| Sub-system | Description |
-|---|---|
-| **Pre-deployment Security Agent** | Reviews every PR for vulnerabilities, missed edge cases, and code structure issues before merge |
-| **RAG Knowledge Base** | Codebase + docs + past incidents indexed as embeddings — all agents query this for context |
-| **Incident Validation Pipeline** | Confirms alerts are real failures (not noise) via automated smoke tests |
-| **Log Severity Estimator** | Classifies incident severity (P1–P4), impact scope, and degradation rate from log streams |
-| **Root Cause & Resolution Agent** | Orchestrates multi-step analysis: recent PRs → RAG query → Phi-3 analysis → runbook generation |
-
-## Tech Stack
-
-### AWS (via Floci — local emulator)
-- API Gateway, Lambda, Kinesis, DynamoDB, S3, SQS, SNS
-- RDS (PostgreSQL + pgvector), ElastiCache (Redis)
-- Step Functions, EventBridge, Cognito, KMS, Secrets Manager
-- CloudWatch, Logs
-
-### Kubernetes (Minikube)
-- KServe — Phi-3 model inference
-- MLflow — experiment tracking + model registry
-- Kubeflow Pipelines + Training Operator
-- External Secrets Operator
-
-### Observability
-- Prometheus + Grafana — metrics and dashboards
-- Jaeger — distributed tracing
-- Loki — log aggregation
-
-### Platform
-- Terraform — all Floci resources as IaC
-- ArgoCD — GitOps model deployments
-- GitHub Actions — CI/CD
-
-## Repository Structure
+Sentinel watches your production alerts, confirms they are real failures, runs a multi-step root-cause analysis with an LLM of your choice, generates a runbook, and posts everything to a live dashboard — all in under two minutes.
 
 ```
-sentinel/
-├── infra/              # Terraform modules for all AWS resources (Floci)
-│   └── modules/
-│       ├── s3/         # Codebase snapshots, incident logs, model artifacts
-│       ├── dynamodb/   # Incidents, PR reviews, validation results, event store
-│       ├── kinesis/    # Alerts, logs, events streams
-│       ├── sqs/        # Validation jobs, log ingestion, notifications
-│       ├── rds/        # PostgreSQL + pgvector for RAG
-│       └── elasticache/# Redis — embedding cache + session state
-│
-├── services/           # Lambda functions (Python)
-│   ├── ingestion/      # Alert/log ingestion into Kinesis
-│   ├── validator/      # Smoke tests to confirm real incidents
-│   ├── log-analyzer/   # Log severity classification
-│   ├── inference-proxy/# Bridge between Lambda and KServe
-│   └── root-cause-agent/ # Step Functions orchestrator handler
-│
-├── ml-core/            # Kubernetes ML stack (original KEMM)
-│   ├── train_pipeline.py       # QLoRA fine-tuning with MLflow
-│   ├── phi-3-lite-isvc.yaml    # KServe InferenceService
-│   ├── mlflow.yaml             # MLflow StatefulSet
-│   └── step-a-secrets.yaml    # External Secrets Operator
-│
-├── gitops/             # ArgoCD application manifests
-├── observability/      # Prometheus, Grafana, Jaeger config
-└── docs/               # Architecture deep-dives
+Alert fired
+    │
+Kinesis stream
+    │
+┌───▼──────────────────┐
+│  Validator Lambda    │  3-signal cross-check: health endpoint + smoke test + metrics
+└───┬──────────────────┘
+    │ confirmed real incident
+┌───▼──────────────────┐
+│  Log Analyzer        │  rule-based + ML severity (P1–P4), impact scope, degradation trend
+└───┬──────────────────┘
+    │
+┌───▼──────────────────┐
+│  Root Cause Agent    │  Step Functions: recent commits → RAG query → LLM RCA → runbook
+│  (5-step pipeline)   │
+└───┬──────────────────┘
+    │
+┌───▼──────────────────┐
+│  Dashboard + Slack   │  FastAPI SPA auto-refreshes every 15 s; P1/P2 → Slack alert
+└──────────────────────┘
 ```
 
-## Getting Started
+Also ships a **PR Security Agent** — every pull request is scanned for OWASP issues, missed edge cases, and structural bugs before merge.
 
-### Prerequisites
-- [Floci](https://floci.io) running locally
-- Minikube with KServe + MLflow deployed (see `ml-core/`)
-- Terraform >= 1.6
-- Python 3.10+
+---
 
-### 1. Start Floci
+## Quick start (60 seconds)
+
 ```bash
-# Verify Floci is running
-curl http://localhost:4566/_floci/health
+git clone https://github.com/VishalVinayRam/Project-KEMM
+cd Project-KEMM
+./setup_demo.sh
+# then open http://localhost:8501
 ```
 
-### 2. Provision AWS Resources
+`setup_demo.sh` is idempotent. It:
+1. Checks prereqs (Python 3.10+, pip, Docker)
+2. Installs Python deps
+3. Starts **Floci** (local AWS emulator) at `http://localhost:4566`
+4. Starts **Ollama** daemon, picks the best available model, starts the KServe bridge on port 8080
+5. Creates Kinesis streams / SQS queues / DynamoDB tables
+6. Seeds 6 realistic demo incidents
+7. Starts the FastAPI dashboard on **port 8501**
+
+> **No Ollama?** No problem — Sentinel degrades gracefully to a hardcoded RCA stub so the demo still works.
+
+To fire a test incident from the dashboard, click **"Fire Demo Incident"** or call the API:
+
+```bash
+curl -s -X POST http://localhost:8501/api/demo/fire \
+  -H "Content-Type: application/json" \
+  -d '{"severity": "P1", "service": "auth-service"}' | jq .
+```
+
+---
+
+## Provider configuration (`sentinel.yaml`)
+
+Drop a `sentinel.yaml` in the project root (see `sentinel.example.yaml` for the full schema):
+
+```yaml
+llm:
+  provider: kserve          # kserve | openai | anthropic | ollama | gemini
+  endpoint: http://localhost:8080
+  model: phi3:mini
+
+cloud_provider:
+  provider: floci           # floci | aws | gcp
+  endpoint: http://localhost:4566
+
+git_provider:
+  provider: github
+  token: ${GITHUB_TOKEN}
+  repo: org/repo
+
+alerting:
+  provider: slack
+  webhook_url: ${SLACK_WEBHOOK_URL}
+```
+
+### Supported providers
+
+| Category | Providers |
+|---|---|
+| **LLM** | KServe (Ollama bridge), OpenAI, Anthropic, Gemini, Ollama (direct) |
+| **Cloud / storage** | AWS (DynamoDB, Kinesis, S3, SQS, SNS), GCP, Floci (local dev) |
+| **Git** | GitHub, GitLab |
+| **Alerting** | Slack, PagerDuty |
+| **Log ingestion** | CloudWatch Alarms (SNS→Lambda), Loki/Grafana (AlertManager webhook) |
+
+**LLM fallback chain** — if KServe is unavailable, Sentinel automatically falls back through `gemini-1.5-flash → gpt-4o-mini → claude-haiku`. Set any combination of `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`; only the ones you set are tried.
+
+---
+
+## Key environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SENTINEL_API_KEY` | _(unset = open)_ | Enforces `X-API-Key` auth on all API routes |
+| `SENTINEL_ENV` | `development` | Set to `production` to restrict CORS origins |
+| `SENTINEL_ALLOWED_ORIGINS` | _(none)_ | Comma-separated allowed CORS origins |
+| `FLOCI_ENDPOINT` | `http://localhost:4566` | Local AWS emulator URL |
+| `KSERVE_ENDPOINT` | `http://localhost:8081` | KServe / Ollama bridge URL |
+| `GEMINI_API_KEY` | _(none)_ | Fallback LLM — Gemini |
+| `OPENAI_API_KEY` | _(none)_ | Fallback LLM — OpenAI |
+| `ANTHROPIC_API_KEY` | _(none)_ | Fallback LLM — Anthropic |
+| `SLACK_WEBHOOK_URL` | _(none)_ | P1/P2 Slack notifications |
+| `INCIDENTS_TABLE` | `sentinel-incidents` | DynamoDB table |
+
+---
+
+## Repository layout
+
+```
+sentinel/          Core Python package (pip-installable)
+  config/          YAML config loader → typed dataclasses
+  core/            Severity enum, Incident dataclass, PR review logic
+  providers/
+    base/          Abstract base classes (LLM, Cloud, Git, Alerting)
+    llm/           anthropic · openai · gemini · kserve · ollama · fallback
+    cloud/         aws · gcp
+    git/           github · gitlab
+    alerting/      slack · pagerduty
+  rag/             Codebase indexer → pgvector similarity search
+  registry.py      ProviderRegistry.from_config() — wires everything
+
+services/          Lambda handlers + local servers
+  dashboard/       FastAPI REST API + single-page dashboard UI
+  cloudwatch-alarm-receiver/  SNS → Lambda → incident receiver
+  log-analyzer/    Kinesis consumer: rule + ML severity classification
+  loki-bridge/     AlertManager webhook → Kinesis
+  validator/       3-signal alert validation
+  root-cause-agent/ Step Functions: 5-step LLM RCA pipeline
+  pr-security-agent/ GitHub webhook → OWASP/edge-case PR scan
+  kserve-local/    Local KServe V2 bridge → Ollama
+
+infra/             Terraform — all AWS resources
+helm/sentinel/     Helm chart for Kubernetes deployment
+ml-core/           KServe ISVC YAML, MLflow training pipeline
+observability/     Prometheus values, Grafana dashboards, Loki rules
+tests/             pytest suite (189 tests, 0 dependencies on real AWS)
+```
+
+---
+
+## Running tests
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest tests/                        # 189 unit tests, no infrastructure needed
+python scripts/e2e_test.py           # 29 integration tests (needs Floci running)
+```
+
+---
+
+## Real AWS deployment
+
 ```bash
 cd infra
 terraform init
-terraform plan
-terraform apply
+terraform apply \
+  -var="github_token=$GITHUB_TOKEN" \
+  -var="kserve_endpoint=http://your-cluster:8080"
 ```
 
-### 3. Deploy ML Core
+Helm chart for Kubernetes:
+
 ```bash
-kubectl apply -f ml-core/mlflow.yaml
-kubectl apply -f ml-core/step-a-secrets.yaml
-kubectl apply -f ml-core/phi-3-lite-isvc.yaml
+helm install sentinel helm/sentinel/ \
+  --set sentinelApiKey=$SENTINEL_API_KEY \
+  --set kserveEndpoint=http://your-kserve:8080
 ```
 
-## Build Phases
+---
 
-| Phase | Status | Description |
-|---|---|---|
-| 1 | ✅ In Progress | Repo structure + Terraform base (S3, DynamoDB, Kinesis, SQS, RDS, ElastiCache) |
-| 2 | ⬜ Pending | Pre-deployment Security Agent (webhook → Lambda → KServe → PR comment) |
-| 3 | ⬜ Pending | RAG Knowledge Base (codebase → embeddings → pgvector) |
-| 4 | ⬜ Pending | Incident Validation Pipeline (Kinesis → smoke tests → SQS) |
-| 5 | ⬜ Pending | Log Severity Estimation (Phi-3 classifies log streams) |
-| 6 | ⬜ Pending | Root Cause Step Functions Orchestration |
-| 7 | ⬜ Pending | Full Observability (Prometheus, Grafana, Jaeger) |
-| 8 | ⬜ Pending | ArgoCD GitOps + MLflow model retraining loop |
+## Adding a new LLM provider
+
+1. Implement `BaseLLMProvider` in `sentinel/providers/llm/yourprovider.py` (four methods: `complete`, `embed`, `embed_batch`, `health_check`)
+2. Add a branch in `sentinel/registry.py::_build_llm()`
+3. Set `llm.provider: yourprovider` in `sentinel.yaml`
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

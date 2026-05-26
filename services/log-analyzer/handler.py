@@ -4,13 +4,11 @@ import os
 import re
 from decimal import Decimal
 from datetime import datetime, timezone
-from collections import Counter
-
 import requests
 
 import sys
 sys.path.append("/var/task/shared")
-from aws_clients import dynamodb, kinesis
+from aws_clients import dynamodb, kinesis  # noqa: E402
 
 
 INCIDENTS_TABLE = os.environ["INCIDENTS_TABLE"]
@@ -58,7 +56,7 @@ def _analyze_log_batch(batch: dict) -> None:
 
 
 def _classify_by_rules(logs: list) -> str:
-    text = " ".join(str(l) for l in logs)
+    text = " ".join(str(entry) for entry in logs)
     for keywords, severity in SEVERITY_RULES:
         if any(kw in text for kw in keywords):
             return severity
@@ -96,7 +94,7 @@ def _merge_severity(rule: str, ml: str) -> str:
 
 
 def _estimate_impact(logs: list, ml_analysis: dict) -> dict:
-    error_count = sum(1 for l in logs if re.search(r"error|exception|500", str(l), re.I))
+    error_count = sum(1 for entry in logs if re.search(r"error|exception|500", str(entry), re.I))
     # DynamoDB requires Decimal for all numeric types — no plain floats allowed
     return {
         "error_rate_in_sample": Decimal(str(round(error_count / max(len(logs), 1), 3))),

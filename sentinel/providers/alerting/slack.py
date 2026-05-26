@@ -1,4 +1,3 @@
-import json
 import requests
 
 from sentinel.providers.base.alerting import AlertPayload, BaseAlertingProvider
@@ -34,7 +33,7 @@ class SlackProvider(BaseAlertingProvider):
                     {"type": "mrkdwn", "text": f"*Severity:*\n`{payload.severity}`"},
                     {"type": "mrkdwn", "text": f"*Service:*\n{payload.service_name}"},
                     {"type": "mrkdwn", "text": f"*Incident ID:*\n`{payload.incident_id}`"},
-                    {"type": "mrkdwn", "text": f"*Status:*\nInvestigating"},
+                    {"type": "mrkdwn", "text": "*Status:*\nInvestigating"},
                 ],
             },
             {

@@ -21,4 +21,4 @@ echo "  │   http://localhost:8501                 │"
 echo "  └─────────────────────────────────────────┘"
 echo ""
 
-uvicorn services.dashboard.api:app --host 0.0.0.0 --port 8501 --reload
+uvicorn services.dashboard.api:app --host 0.0.0.0 --port 8501 --workers 2
