@@ -22,10 +22,11 @@ from typing import Optional
 
 import boto3
 import requests as _requests
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
 
 # ── AWS / Floci config ─────────────────────────────────────────────────────
 ENDPOINT = os.environ.get("FLOCI_ENDPOINT", "http://localhost:4566")
@@ -68,14 +69,51 @@ LOKI_PASSWORD    = os.environ.get("LOKI_PASSWORD", "")
 
 CLOUDWATCH_LOG_GROUP_PREFIX = os.environ.get("CLOUDWATCH_LOG_GROUP_PREFIX", "/ecs/")
 
+# ── Auth ───────────────────────────────────────────────────────────────────
+# Set SENTINEL_API_KEY to enforce authentication on all API routes.
+# When not set the API is open (suitable for local demo only).
+SENTINEL_API_KEY = os.environ.get("SENTINEL_API_KEY", "")
+if not SENTINEL_API_KEY:
+    print(
+        "[sentinel] WARNING: SENTINEL_API_KEY not set — API is open with no authentication. "
+        "Set this env var before any non-local deployment.",
+        file=sys.stderr,
+    )
+
+_api_key_scheme = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def verify_api_key(api_key: Optional[str] = Depends(_api_key_scheme)) -> None:
+    """FastAPI dependency — enforces X-API-Key when SENTINEL_API_KEY is configured."""
+    if not SENTINEL_API_KEY:
+        return  # open mode: no key configured
+    if api_key != SENTINEL_API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "Unauthorized", "detail": "Invalid or missing X-API-Key header"},
+        )
+
+
+# ── CORS ───────────────────────────────────────────────────────────────────
+# Production: set SENTINEL_ALLOWED_ORIGINS=https://your-dashboard.example.com
+# Development: defaults to localhost only; set SENTINEL_ENV=development for wildcard.
+SENTINEL_ENV = os.environ.get("SENTINEL_ENV", "development")
+_raw_origins  = os.environ.get("SENTINEL_ALLOWED_ORIGINS", "")
+
+if SENTINEL_ENV == "development" and not _raw_origins:
+    _cors_origins = ["*"]
+else:
+    _cors_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()] or ["http://localhost:8501"]
+
 # ── App ────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Sentinel Dashboard API", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "X-API-Key", "Authorization"],
+    allow_credentials=False,
 )
 
 UI_DIR = Path(__file__).parent / "ui"
@@ -1160,7 +1198,7 @@ def _update_incident_rca(
 # ── API endpoints ──────────────────────────────────────────────────────────
 
 @app.get("/api/incidents")
-def list_incidents(status: Optional[str] = None, severity: Optional[str] = None):
+def list_incidents(status: Optional[str] = None, severity: Optional[str] = None, _: None = Depends(verify_api_key)):
     try:
         table = _dynamo().Table(INCIDENTS_TABLE)
         resp  = table.scan()
@@ -1176,7 +1214,7 @@ def list_incidents(status: Optional[str] = None, severity: Optional[str] = None)
 
 
 @app.get("/api/incidents/{incident_id}")
-def get_incident(incident_id: str):
+def get_incident(incident_id: str, _: None = Depends(verify_api_key)):
     try:
         table = _dynamo().Table(INCIDENTS_TABLE)
         resp  = table.get_item(Key={"incident_id": incident_id})
@@ -1191,7 +1229,7 @@ def get_incident(incident_id: str):
 
 
 @app.get("/api/stats")
-def get_stats():
+def get_stats(_: None = Depends(verify_api_key)):
     try:
         incidents = list_incidents()
         total     = len(incidents)
@@ -1247,7 +1285,7 @@ def _calc_mttr(incidents: list) -> float:
 
 
 @app.get("/api/validations")
-def list_validations(limit: int = 20):
+def list_validations(limit: int = 20, _: None = Depends(verify_api_key)):
     try:
         table = _dynamo().Table(VALIDATION_TABLE)
         items = [_serialise(i) for i in table.scan(Limit=limit).get("Items", [])]
@@ -1258,7 +1296,7 @@ def list_validations(limit: int = 20):
 
 
 @app.get("/api/logs/{service}")
-def get_logs(service: str, minutes: int = 30):
+def get_logs(service: str, minutes: int = 30, _: None = Depends(verify_api_key)):
     """Fetch recent error logs for a service from Loki or CloudWatch."""
     logs = _fetch_log_context(service, minutes)
     lines = [l for l in logs.splitlines() if l.strip()]
@@ -1271,7 +1309,7 @@ def get_logs(service: str, minutes: int = 30):
 
 
 @app.get("/api/integrations/status")
-def integrations_status():
+def integrations_status(_: None = Depends(verify_api_key)):
     """Health check for all external integrations."""
     status = {}
 
@@ -1414,7 +1452,7 @@ def _create_and_analyze(
 # ── Incident receiver (external webhook / alarm sources) ──────────────────────
 
 @app.post("/api/incidents/receive")
-def receive_incident(payload: dict):
+def receive_incident(payload: dict, _: None = Depends(verify_api_key)):
     """
     General-purpose incident receiver — accepts webhooks from CloudWatch, Grafana,
     Loki AlertManager, PagerDuty, or any custom source.
@@ -1448,7 +1486,7 @@ def receive_incident(payload: dict):
 
 
 @app.post("/api/demo/fire")
-def fire_demo_incident(payload: dict):
+def fire_demo_incident(payload: dict, _: None = Depends(verify_api_key)):
     """Fire a demo incident. Body: { "severity": "P1"|..., "service": "my-service" }"""
     severity = payload.get("severity", "P2")
     service  = payload.get("service",  "demo-service")
@@ -1457,7 +1495,7 @@ def fire_demo_incident(payload: dict):
 
 
 @app.post("/api/incidents/{incident_id}/resolve")
-def resolve_incident(incident_id: str):
+def resolve_incident(incident_id: str, _: None = Depends(verify_api_key)):
     try:
         _dynamo().Table(INCIDENTS_TABLE).update_item(
             Key={"incident_id": incident_id},
@@ -1474,7 +1512,7 @@ def resolve_incident(incident_id: str):
 
 
 @app.post("/api/incidents/{incident_id}/acknowledge")
-def acknowledge_incident(incident_id: str, payload: dict = {}):
+def acknowledge_incident(incident_id: str, payload: dict = {}, _: None = Depends(verify_api_key)):
     assignee = payload.get("assignee", "on-call")
     try:
         _dynamo().Table(INCIDENTS_TABLE).update_item(
@@ -1495,7 +1533,7 @@ def acknowledge_incident(incident_id: str, payload: dict = {}):
 # ── KServe health (kept for backwards compat) ──────────────────────────────
 
 @app.get("/api/kserve/health")
-def kserve_health():
+def kserve_health(_: None = Depends(verify_api_key)):
     try:
         resp = _requests.get(f"{KSERVE_ENDPOINT}/v2/health/ready", timeout=3)
         bridge_ok = resp.status_code == 200
@@ -1513,7 +1551,9 @@ def kserve_health():
 
 @app.get("/")
 def serve_ui():
-    return FileResponse(UI_DIR / "index.html")
+    html = (UI_DIR / "index.html").read_text()
+    html = html.replace("'%%SENTINEL_API_KEY%%'", f"'{SENTINEL_API_KEY}'")
+    return HTMLResponse(content=html)
 
 
 @app.get("/health")

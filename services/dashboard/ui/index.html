@@ -875,6 +875,15 @@
 
 <script>
 const API = '';
+const API_KEY = '%%SENTINEL_API_KEY%%';   // injected at serve time by api.py
+
+/** Authenticated fetch — automatically adds X-API-Key when a key is configured. */
+function apiFetch(url, opts = {}) {
+  const headers = Object.assign({}, opts.headers || {});
+  if (API_KEY) headers['X-API-Key'] = API_KEY;
+  return fetch(url, Object.assign({}, opts, { headers }));
+}
+
 let allIncidents = [];
 let selectedId   = null;
 let currentView  = 'overview';
@@ -965,8 +974,8 @@ const SEV_COLOR = { P1:'var(--p1)', P2:'var(--p2)', P3:'var(--p3)', P4:'var(--p4
 // ── Overview ─────────────────────────────────────────────────────────────────
 async function loadOverview() {
   const [incidents, stats] = await Promise.all([
-    fetch(API + '/api/incidents').then(r => r.json()).catch(() => []),
-    fetch(API + '/api/stats').then(r => r.json()).catch(() => ({})),
+    apiFetch(API + '/api/incidents').then(r => r.json()).catch(() => []),
+    apiFetch(API + '/api/stats').then(r => r.json()).catch(() => ({})),
   ]);
   allIncidents = incidents;
 
@@ -1026,7 +1035,7 @@ async function loadOverview() {
 async function loadSystemStatus() {
   const el = document.getElementById('system-status');
   try {
-    const s = await fetch(API + '/api/integrations/status').then(r => r.json()).catch(() => ({}));
+    const s = await apiFetch(API + '/api/integrations/status').then(r => r.json()).catch(() => ({}));
     const items = [
       { name:'Floci / DynamoDB', up: s.dynamodb?.up ?? false },
       { name:'KServe + Ollama',  up: s.kserve?.up  ?? false },
@@ -1113,13 +1122,13 @@ async function loadDetail(id) {
     Loading…
   </div>`;
 
-  const inc = await fetch(API + '/api/incidents/' + id).then(r => r.json()).catch(() => null);
+  const inc = await apiFetch(API + '/api/incidents/' + id).then(r => r.json()).catch(() => null);
   if (!inc) {
     panel.innerHTML = '<div style="padding:24px;color:var(--p1);font-size:13px;">Failed to load incident.</div>';
     return;
   }
   const logData = inc.service
-    ? await fetch(API + '/api/logs/' + encodeURIComponent(inc.service)).then(r => r.json()).catch(() => ({ lines: [], source: 'none' }))
+    ? await apiFetch(API + '/api/logs/' + encodeURIComponent(inc.service)).then(r => r.json()).catch(() => ({ lines: [], source: 'none' }))
     : { lines: [], source: 'none' };
 
   const logs   = inc.log_analysis ?? {};
@@ -1314,13 +1323,13 @@ async function loadDetail(id) {
 
 // ── Incident actions ──────────────────────────────────────────────────────────
 async function resolveIncident(id) {
-  await fetch(API + '/api/incidents/' + id + '/resolve', { method: 'POST' });
+  await apiFetch(API + '/api/incidents/' + id + '/resolve', { method: 'POST' });
   await refresh();
   if (selectedId) loadDetail(selectedId);
 }
 
 async function ackIncident(id) {
-  await fetch(API + '/api/incidents/' + id + '/acknowledge', {
+  await apiFetch(API + '/api/incidents/' + id + '/acknowledge', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ assignee: 'on-call' }),
@@ -1331,7 +1340,7 @@ async function ackIncident(id) {
 
 // ── Validations ───────────────────────────────────────────────────────────────
 async function loadValidations() {
-  const rows = await fetch(API + '/api/validations').then(r => r.json()).catch(() => []);
+  const rows = await apiFetch(API + '/api/validations').then(r => r.json()).catch(() => []);
   const el   = document.getElementById('validation-table');
   if (!rows.length) {
     el.innerHTML = '<div class="empty-state" style="padding:40px 20px;"><p>No validation records yet</p></div>';
@@ -1357,7 +1366,7 @@ async function loadValidations() {
 
 // ── Integrations ──────────────────────────────────────────────────────────────
 async function loadIntegrations() {
-  const s = await fetch(API + '/api/integrations/status').then(r => r.json()).catch(() => ({}));
+  const s = await apiFetch(API + '/api/integrations/status').then(r => r.json()).catch(() => ({}));
   const kserve = s.kserve  ?? {};
   const loki   = s.loki    ?? {};
   const dynamo = s.dynamodb ?? {};
@@ -1386,7 +1395,7 @@ async function fireDemoIncident() {
   btn.disabled = true;
   btn.innerHTML = `<svg class="spin" style="width:14px;height:14px;" fill="none" viewBox="0 0 24 24"><circle style="opacity:.2" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path style="opacity:.8" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg> Firing…`;
 
-  const res = await fetch(API + '/api/demo/fire', {
+  const res = await apiFetch(API + '/api/demo/fire', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ severity: sev, service: svc }),
@@ -1490,7 +1499,7 @@ async function refresh() {
   const icon = document.getElementById('refresh-icon');
   if (icon) icon.classList.add('spin');
   try {
-    allIncidents = await fetch(API + '/api/incidents').then(r => r.json()).catch(() => []);
+    allIncidents = await apiFetch(API + '/api/incidents').then(r => r.json()).catch(() => []);
     const now  = new Date().toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
     const mini = document.getElementById('last-updated-mini');
     if (mini) mini.textContent = now;
