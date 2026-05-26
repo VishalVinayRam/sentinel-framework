@@ -7,7 +7,7 @@ name = "sentinel-framework"
 version = "0.1.0"
 description = "AI-powered incident response framework — plug into any cloud, any git provider, any LLM"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.10"
 authors = [{ name = "Vishal Vinay Ram", email = "vishalvinayram5432@gmail.com" }]
 keywords = ["incident-response", "mlops", "devops", "ai", "sre"]
@@ -15,7 +15,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
