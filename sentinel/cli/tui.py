@@ -14,7 +14,17 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.css.query import NoMatches
 from textual.reactive import reactive
-from textual.widgets import Footer, Header, Label, ListItem, ListView, Static
+from textual.screen import Screen
+from textual.widgets import Footer, Label, ListItem, ListView, Static
+
+_LOGO = """\
+ ███████╗███████╗███╗   ██╗████████╗██╗███╗   ██╗███████╗██╗     ███████╗
+ ██╔════╝██╔════╝████╗  ██║╚══██╔══╝██║████╗  ██║██╔════╝██║     ██╔════╝
+ ███████╗█████╗  ██╔██╗ ██║   ██║   ██║██╔██╗ ██║█████╗  ██║     ███████╗
+ ╚════██║██╔══╝  ██║╚██╗██║   ██║   ██║██║╚██╗██║██╔══╝  ██║     ╚════██║
+ ███████║███████╗██║ ╚████║   ██║   ██║██║ ╚████║███████╗███████╗███████║
+ ╚══════╝╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝╚══════╝\
+"""
 
 DASHBOARD_URL = os.environ.get("SENTINEL_DASHBOARD_URL", "http://localhost:8501").rstrip("/")
 API_KEY       = os.environ.get("SENTINEL_API_KEY", "")
@@ -38,6 +48,49 @@ def _age(iso: str) -> str:
         return f"{s//3600}h"
     except Exception:
         return "?"
+
+
+class SplashScreen(Screen):
+    CSS = """
+    SplashScreen {
+        background: #1a1a1a;
+        align: center middle;
+    }
+    #splash-logo {
+        color: #e0e0e0;
+        text-align: center;
+        text-style: bold;
+    }
+    #splash-sub {
+        color: #555;
+        text-align: center;
+        margin-top: 1;
+    }
+    #splash-hint {
+        color: #333;
+        text-align: center;
+        margin-top: 2;
+    }
+    """
+
+    BINDINGS = [Binding("enter,space,escape,q", "skip", show=False)]
+
+    def compose(self) -> ComposeResult:
+        yield Static(_LOGO, id="splash-logo")
+        yield Static("AI-powered incident response", id="splash-sub")
+        yield Static("press any key", id="splash-hint")
+
+    def on_mount(self) -> None:
+        self.set_timer(2.0, self._go)
+
+    def _go(self) -> None:
+        self.app.switch_screen(MainScreen())
+
+    def action_skip(self) -> None:
+        self._go()
+
+    def on_key(self) -> None:
+        self._go()
 
 
 CSS = """
@@ -97,7 +150,7 @@ Footer {
 """
 
 
-class SentinelTUI(App):
+class MainScreen(Screen):
     CSS = CSS
 
     BINDINGS = [
@@ -305,6 +358,13 @@ class SentinelTUI(App):
 
 def _st_col(st: str) -> str:
     return {"OPEN": "red", "ACKNOWLEDGED": "yellow", "RESOLVED": "green"}.get(st, "white")
+
+
+class SentinelTUI(App):
+    SCREENS = {"splash": SplashScreen, "main": MainScreen}
+
+    def on_mount(self) -> None:
+        self.push_screen(SplashScreen())
 
 
 def run() -> None:
