@@ -195,11 +195,11 @@ class MainScreen(Screen):
             data = _api("/api/incidents")
             incs = data if isinstance(data, list) else data.get("incidents", [])
             self._connected = True
-            self.call_from_thread(self._apply, incs)
+            self.app.call_from_thread(self._apply, incs)
         except Exception as e:
             self._connected = False
-            self.call_from_thread(self._set_status, f"[red]offline:[/] {e}")
-            self.call_from_thread(self._draw_title)
+            self.app.call_from_thread(self._set_status, f"[red]offline:[/] {e}")
+            self.app.call_from_thread(self._draw_title)
 
     def _apply(self, incs: list) -> None:
         self._incidents = incs
@@ -341,19 +341,19 @@ class MainScreen(Screen):
     def _do_fire(self, svc: str) -> None:
         try:
             resp = _api("/api/demo/fire", "POST", {"service": svc, "severity": "P2"})
-            self.call_from_thread(self._set_status, f"fired {resp.get('incident_id','?')[:16]}")
+            self.app.call_from_thread(self._set_status, f"fired {resp.get('incident_id','?')[:16]}")
         except Exception as e:
-            self.call_from_thread(self._set_status, f"[red]error:[/] {e}")
-        self.call_from_thread(self.fetch_incidents)
+            self.app.call_from_thread(self._set_status, f"[red]error:[/] {e}")
+        self.app.call_from_thread(self.fetch_incidents)
 
     @work(thread=True)
     def _do_resolve(self, iid: str) -> None:
         try:
             _api(f"/api/incidents/{iid}/resolve", "POST")
-            self.call_from_thread(self._set_status, f"resolved {iid[:16]}")
+            self.app.call_from_thread(self._set_status, f"resolved {iid[:16]}")
         except Exception as e:
-            self.call_from_thread(self._set_status, f"[red]error:[/] {e}")
-        self.call_from_thread(self.fetch_incidents)
+            self.app.call_from_thread(self._set_status, f"[red]error:[/] {e}")
+        self.app.call_from_thread(self.fetch_incidents)
 
 
 def _st_col(st: str) -> str:
