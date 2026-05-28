@@ -1275,6 +1275,10 @@ class DemoFirePayload(BaseModel):
     title:    Optional[str]                   = Field(None, max_length=512)
 
 
+class ChatRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=2000)
+
+
 # ── API endpoints ──────────────────────────────────────────────────────────
 
 @app.get("/api/incidents")
@@ -1665,13 +1669,92 @@ def kserve_health(_: None = Depends(verify_api_key)):
     }
 
 
+# ── Incident chat ──────────────────────────────────────────────────────────
+
+_CHAT_PROMPT = """\
+You are a senior SRE assistant helping an engineer investigate a production incident.
+
+## Incident context
+Service: {service} | Severity: {severity}
+Root cause: {root_cause}
+Summary: {summary}
+
+## Engineer's question
+{question}
+
+Answer concisely and technically. Be direct and actionable. 3–5 sentences max unless a list helps.\
+"""
+
+@app.post("/api/incidents/{incident_id}/chat")
+async def chat_incident(incident_id: str, body: ChatRequest, _: None = Depends(verify_api_key)):
+    try:
+        inc = _dynamo().Table(INCIDENTS_TABLE).get_item(Key={"incident_id": incident_id}).get("Item")
+    except Exception:
+        inc = None
+    if not inc:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    prompt = _CHAT_PROMPT.format(
+        service    = inc.get("service", "unknown"),
+        severity   = inc.get("severity", "P3"),
+        root_cause = inc.get("root_cause", "unknown"),
+        summary    = inc.get("summary", ""),
+        question   = body.question,
+    )
+
+    chain = _build_llm_chain()
+    for provider in chain:
+        try:
+            if not provider.health_check():
+                continue
+            result = provider.complete(prompt, max_tokens=400, temperature=0.3)
+            text = result.text.strip()
+            # Strip markdown code fences
+            text = re.sub(r'^```[a-z]*\n?|\n?```$', '', text).strip()
+            # If small model returned JSON, extract any string value longer than 20 chars
+            if text.startswith('{'):
+                try:
+                    obj = json.loads(text)
+                    candidates = [v for v in obj.values() if isinstance(v, str) and len(v) > 20]
+                    if candidates:
+                        text = max(candidates, key=len)
+                except Exception:
+                    pass
+            if len(text) > 15:
+                label = {
+                    "OllamaProvider":    f"ollama ({OLLAMA_MODEL})",
+                    "KServeProvider":    f"kserve ({KSERVE_MODEL})",
+                    "GeminiProvider":    f"gemini ({GEMINI_MODEL})",
+                    "OpenAIProvider":    f"openai ({OPENAI_MODEL})",
+                    "AnthropicProvider": f"anthropic ({ANTHROPIC_MODEL})",
+                }.get(type(provider).__name__, type(provider).__name__)
+                return {"answer": text, "provider": label}
+        except Exception:
+            continue
+
+    raise HTTPException(status_code=503, detail="No LLM provider available")
+
+
 # ── Serve the SPA ──────────────────────────────────────────────────────────
+
+# React dist takes priority; fall back to old HTML if not built yet
+_REACT_DIST = Path(__file__).parent / "ui-dist"
 
 @app.get("/")
 def serve_ui():
+    if (_REACT_DIST / "index.html").exists():
+        html = (_REACT_DIST / "index.html").read_text()
+        html = html.replace('window.__SENTINEL_API_KEY__', f'"{SENTINEL_API_KEY}"')
+        return HTMLResponse(content=html)
     html = (UI_DIR / "index.html").read_text()
     html = html.replace("'%%SENTINEL_API_KEY%%'", f"'{SENTINEL_API_KEY}'")
     return HTMLResponse(content=html)
+
+
+# Serve React static assets (JS/CSS chunks)
+from fastapi.staticfiles import StaticFiles as _StaticFiles
+if (_REACT_DIST / "assets").exists():
+    app.mount("/assets", _StaticFiles(directory=str(_REACT_DIST / "assets")), name="assets")
 
 
 @app.get("/health")
