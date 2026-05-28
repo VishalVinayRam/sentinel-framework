@@ -51,6 +51,8 @@ PR_REVIEWS_TABLE = os.environ.get("PR_REVIEWS_TABLE",          "sentinel-pr-revi
 VALIDATION_TABLE = os.environ.get("VALIDATION_RESULTS_TABLE",  "sentinel-validation-results")
 
 # KServe / Ollama (local, always tried first — free)
+OLLAMA_URL      = os.environ.get("OLLAMA_URL",      "http://localhost:11434")
+OLLAMA_MODEL    = os.environ.get("OLLAMA_MODEL",    "llama3.2:1b")
 KSERVE_ENDPOINT = os.environ.get("KSERVE_ENDPOINT", "http://localhost:8081")
 KSERVE_MODEL    = os.environ.get("KSERVE_MODEL",    "llama3.2:1b")
 
@@ -980,10 +982,17 @@ def _fetch_log_context(service: str, minutes: int = 30) -> str:
 def _build_llm_chain():
     """Build ordered provider list from available env vars at startup.
 
-    Order: KServe (local/free) → Gemini → OpenAI → Anthropic
+    Order: Ollama (direct, reliable JSON mode) → KServe bridge → Gemini → OpenAI → Anthropic
     Any provider whose key / endpoint is missing is skipped silently.
     """
     providers = []
+    try:
+        from sentinel.providers.llm.ollama import OllamaProvider
+        providers.append(OllamaProvider(base_url=OLLAMA_URL, model=OLLAMA_MODEL))
+        print(f"[llm-chain] + Ollama  {OLLAMA_URL}  model={OLLAMA_MODEL}", file=sys.stderr)
+    except Exception as e:
+        print(f"[llm-chain] Ollama skip: {e}", file=sys.stderr)
+
     try:
         from sentinel.providers.llm.kserve import KServeProvider
         providers.append(KServeProvider(endpoint=KSERVE_ENDPOINT, model_name=KSERVE_MODEL))
@@ -1033,15 +1042,19 @@ def _get_llm_providers() -> list:
 
 # ── RCA prompts ────────────────────────────────────────────────────────────
 
-# Short prompt for small local models (1b–3b): tight JSON template, minimal context
+# Prompt for small local models (1b–3b) — plain English, no template JSON to confuse them.
+# The chat API + format=json in OllamaProvider enforces valid JSON; this prompt just
+# describes the fields we need in plain language.
 _RCA_PROMPT_SMALL = """\
-Production incident. Fill every field. Output raw JSON only, no markdown.
-
-Service: {service}  Severity: {severity}
-{log_section}
-{{"root_cause":"one sentence technical root cause","summary":"one sentence business impact","runbook":{{"step1":"action","step2":"action","step3":"action","step4":"action"}},"degradation_trend":"worsening","affected_components":["{service}"]}}
-
-JSON:"""
+{service} ({severity} incident){log_section}
+Write a JSON object with these string fields:
+  root_cause: one sentence — the precise technical reason this broke
+  summary: one sentence — business impact on users
+  runbook: object with step1 step2 step3 step4 — immediate fix actions
+  degradation_trend: "worsening" or "stable" or "improving"
+  affected_components: list of service names affected
+  confidence: "high" or "medium" or "low"
+"""
 
 # Rich prompt for capable models (Gemini Flash, GPT-4o-mini, Claude Haiku)
 _RCA_PROMPT_FULL = """\
@@ -1069,7 +1082,7 @@ _RCA_SYSTEM = "You are a senior SRE. Respond with raw JSON only. No markdown, no
 
 def _is_small_model(provider) -> bool:
     name = type(provider).__name__
-    return name == "KServeProvider"
+    return name in ("KServeProvider", "OllamaProvider")
 
 
 def _call_llm_chain(service: str, severity: str, log_context: str = "",
@@ -1127,6 +1140,14 @@ def _call_llm_chain(service: str, severity: str, log_context: str = "",
                 continue
 
             parsed = json.loads(match.group())
+            # Normalize fields that small models sometimes return as lists or nested dicts
+            for field in ("root_cause", "summary", "degradation_trend", "confidence"):
+                val = parsed.get(field)
+                if isinstance(val, list):
+                    parsed[field] = val[0] if val else ""
+                elif isinstance(val, dict):
+                    parsed[field] = next((v for v in val.values() if isinstance(v, str)), "")
+
             rc = str(parsed.get("root_cause", ""))
             if len(rc) < 15:
                 print(f"[rca-bg] {name}: root_cause too short — retrying next", file=sys.stderr)
@@ -1134,6 +1155,7 @@ def _call_llm_chain(service: str, severity: str, log_context: str = "",
 
             print(f"[rca-bg] {name} succeeded — root_cause: {rc[:80]}", file=sys.stderr)
             provider_label = {
+                "OllamaProvider":    f"ollama ({OLLAMA_MODEL})",
                 "KServeProvider":    f"kserve-ollama ({KSERVE_MODEL})",
                 "GeminiProvider":    f"gemini ({GEMINI_MODEL})",
                 "OpenAIProvider":    f"openai ({OPENAI_MODEL})",

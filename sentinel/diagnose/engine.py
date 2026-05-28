@@ -7,6 +7,8 @@ import sys
 from datetime import datetime, timezone
 from typing import Optional
 
+OLLAMA_URL        = os.environ.get("OLLAMA_URL",        "http://localhost:11434")
+OLLAMA_MODEL      = os.environ.get("OLLAMA_MODEL",      "llama3.2:1b")
 KSERVE_ENDPOINT   = os.environ.get("KSERVE_ENDPOINT",   "http://localhost:8081")
 KSERVE_MODEL      = os.environ.get("KSERVE_MODEL",      "llama3.2:1b")
 GEMINI_API_KEY    = os.environ.get("GEMINI_API_KEY",    "")
@@ -17,15 +19,18 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL   = os.environ.get("ANTHROPIC_MODEL",   "claude-haiku-4-5-20251001")
 
 
-# Tight prompt for small local models (1b–3b) — minimal context, explicit JSON template
+# Minimal prompt for small local models (1b–3b).
+# Uses plain English descriptions — template JSON confuses small models.
 _PROMPT_SMALL = """\
-Production incident. Output raw JSON only, no markdown, no explanation.
-
-Service: {service}  Severity: {severity}
-{log_section}
-{{"root_cause":"precise one-sentence technical root cause","summary":"one-sentence business impact","runbook":{{"step1":"action","step2":"action","step3":"action","step4":"action"}},"degradation_trend":"worsening","affected_components":["{service}"]}}
-
-JSON:"""
+{service} ({severity} incident){log_section}
+Write a JSON object with these string fields:
+  root_cause: one sentence — the precise technical reason this broke
+  summary: one sentence — business impact on users
+  runbook: object with step1 step2 step3 step4 — immediate fix actions
+  degradation_trend: "worsening" or "stable" or "improving"
+  affected_components: list of service names affected
+  confidence: "high" or "medium" or "low"
+"""
 
 # Rich prompt for capable models (Gemini Flash, GPT-4o-mini, Claude Haiku+)
 _PROMPT_FULL = """\
@@ -81,8 +86,16 @@ def build_providers(
                 click_safe_echo(f"  [llm] skip: {e}")
 
     want = only.lower() if only else None
+    ollama_url   = os.environ.get("OLLAMA_URL",   OLLAMA_URL)
+    ollama_model = os.environ.get("OLLAMA_MODEL", OLLAMA_MODEL)
 
-    if want in (None, "ollama", "kserve"):
+    # Direct Ollama (uses format=json — most reliable for small models)
+    if want in (None, "ollama"):
+        _add(lambda: _import("sentinel.providers.llm.ollama", "OllamaProvider")(
+            base_url=ollama_url, model=ollama_model))
+
+    # KServe bridge (fallback — used when Ollama isn't directly accessible)
+    if want in (None, "kserve"):
         _add(lambda: _import("sentinel.providers.llm.kserve", "KServeProvider")(
             endpoint=kserve_endpoint, model_name=kserve_model))
 
@@ -137,7 +150,7 @@ def run_rca(
             if not provider.health_check():
                 continue
 
-            if cls_name == "KServeProvider":
+            if cls_name in ("KServeProvider", "OllamaProvider"):
                 log_short = log_context[-800:].strip() if log_context else ""
                 log_sec   = f"Recent logs:\n{log_short}\n" if log_short else ""
                 prompt    = _PROMPT_SMALL.format(service=service, severity=severity, log_section=log_sec)
@@ -157,6 +170,15 @@ def run_rca(
                 continue
 
             parsed = json.loads(match.group())
+            # Small models sometimes return strings as single-element lists
+            for field in ("root_cause", "summary", "degradation_trend", "confidence"):
+                val = parsed.get(field)
+                if isinstance(val, list):
+                    parsed[field] = val[0] if val else ""
+                elif isinstance(val, dict):
+                    # Extract first string value found
+                    parsed[field] = next((v for v in val.values() if isinstance(v, str)), "")
+
             rc = str(parsed.get("root_cause", ""))
             if len(rc) < 15:
                 continue
@@ -178,11 +200,13 @@ def _import(module: str, cls: str):
 
 
 def _label(provider) -> str:
+    ollama_model      = os.environ.get("OLLAMA_MODEL",    OLLAMA_MODEL)
     kserve_model      = os.environ.get("KSERVE_MODEL",    KSERVE_MODEL)
     gemini_model      = os.environ.get("GEMINI_MODEL",    GEMINI_MODEL)
     openai_model      = os.environ.get("OPENAI_MODEL",    OPENAI_MODEL)
     anthropic_model   = os.environ.get("ANTHROPIC_MODEL", ANTHROPIC_MODEL)
     return {
+        "OllamaProvider":    f"ollama ({ollama_model})",
         "KServeProvider":    f"kserve-ollama ({kserve_model})",
         "GeminiProvider":    f"gemini ({gemini_model})",
         "OpenAIProvider":    f"openai ({openai_model})",

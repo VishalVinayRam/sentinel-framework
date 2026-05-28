@@ -14,12 +14,18 @@ class OllamaProvider(BaseLLMProvider):
         self._timeout = timeout
 
     def complete(self, prompt: str, max_tokens: int = 1024, temperature: float = 0.2) -> LLMResponse:
+        # Use /api/chat with format=json — far more reliable than /api/generate for small models.
+        # The system message reinforces JSON-only output; the user message is the prompt.
         resp = requests.post(
-            f"{self._url}/api/generate",
+            f"{self._url}/api/chat",
             json={
                 "model":  self._model,
-                "prompt": prompt,
                 "stream": False,
+                "format": "json",
+                "messages": [
+                    {"role": "system", "content": "You are a senior SRE. Output only valid JSON. No markdown, no explanation."},
+                    {"role": "user",   "content": prompt},
+                ],
                 "options": {
                     "num_predict": max_tokens,
                     "temperature": temperature,
@@ -30,7 +36,8 @@ class OllamaProvider(BaseLLMProvider):
         )
         resp.raise_for_status()
         data = resp.json()
-        return LLMResponse(text=data["response"], model=self._model, raw=data)
+        text = data["message"]["content"]
+        return LLMResponse(text=text, model=self._model, raw=data)
 
     def embed(self, text: str) -> list[float]:
         resp = requests.post(
