@@ -4,6 +4,10 @@ pyyaml>=6.0
 click>=8.1
 boto3>=1.34
 
+# TUI
+textual>=0.80
+rich>=13.4
+
 # RAG
 psycopg2-binary>=2.9
 pgvector>=0.2
